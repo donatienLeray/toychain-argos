@@ -16,7 +16,7 @@
   <controllers>
 
    
-    <python_controller id="con_A" library="/home/eksander/toychain-argos/argos-python/build/libpy_controller_interface.so">
+    <python_controller id="collab" library="/home/dodo/toychain-argos/argos-python/build/libpy_controller_interface.so">
       <!-- Normal actuator/sensor configuration follows -->
       <actuators>
         <epuck_rgb_leds implementation="default" medium="leds" />
@@ -30,10 +30,14 @@
         <epuck_range_and_bearing implementation="medium" medium="rab" show_rays="false"/>
         <differential_steering implementation="default"/>
       </sensors>
-      <params script="/home/eksander/toychain-argos/MarketForaging/controllers/main_individ.py" timeRate="1" />
+      <!-- No required configuration -->
+      
+      <!-- Optionally, you can pass a script as a controller parameter: -->
+      <params script="/home/dodo/toychain-argos/MarketForaging/controllers/main_collab_noepochs.py"
+      timeRate="1" />
     </python_controller>
 
-    <python_controller id="con_B" library="/home/eksander/toychain-argos/argos-python/build/libpy_controller_interface.so">
+    <python_controller id="greedy" library="/home/dodo/toychain-argos/argos-python/build/libpy_controller_interface.so">
       <!-- Normal actuator/sensor configuration follows -->
       <actuators>
         <epuck_rgb_leds implementation="default" medium="leds" />
@@ -47,8 +51,11 @@
         <epuck_range_and_bearing implementation="medium" medium="rab" show_rays="false"/>
         <differential_steering implementation="default"/>
       </sensors>
-
-      <params script="/home/eksander/toychain-argos/MarketForaging/controllers/main_individ.py" timeRate="1" />
+      <!-- No required configuration -->
+      
+      <!-- Optionally, you can pass a script as a controller parameter: -->
+      <params script="/home/dodo/toychain-argos/MarketForaging/controllers/main_greedy.py"
+      timeRate="1" />
     </python_controller>
 
     <python_controller id="con_C" library="/home/eksander/toychain-argos/argos-python/build/libpy_controller_interface.so">
@@ -87,9 +94,9 @@
 
   </controllers>
 
-  <loop_functions library="/home/eksander/toychain-argos/argos-python/build/libpy_loop_function_interface.so"
+  <loop_functions library="/home/dodo/toychain-argos/argos-python/build/libpy_loop_function_interface.so"
                   label="py_loop_function">
-    <params script="/home/eksander/toychain-argos/MarketForaging/loop_functions/loop_function.py"/>
+    <params script="/home/dodo/toychain-argos/MarketForaging/loop_functions/loop_function.py"/>
   </loop_functions>
 
 
@@ -98,7 +105,7 @@
   <!-- *********************** -->
   <arena size="6.123, 6.123, 1" center="0,0,0">
 
- <floor id="f" source="image" path="/home/eksander/toychain-argos/MarketForaging/experiments/floors/market.png" />
+ <floor id="f" source="image" path="/home/dodo/toychain-argos/MarketForaging/experiments/floors/market.png" />
 
     <box id="wall_north" size="6.123,0.06,0.1" movable="false">
       <body position="0,3.061,0" orientation="0,0,0" />
@@ -180,9 +187,9 @@
     <!-- ************************************************************************ -->
   <!-- <qt-opengl autoplay="true"> -->
     <qt-opengl autoplay="true">
-      <user_functions library="/home/eksander/toychain-argos/argos-python/build/libpy_qtuser_function_interface.so"
+      <user_functions library="/home/dodo/toychain-argos/argos-python/build/libpy_qtuser_function_interface.so"
                       label="py_qtuser_function" >
-      <params script="/home/eksander/toychain-argos/MarketForaging/loop_functions/qtuser_function.py"/>
+      <params script="/home/dodo/toychain-argos/MarketForaging/loop_functions/qtuser_function.py"/>
       </user_functions>
       
     <camera>
