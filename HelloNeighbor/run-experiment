@@ -92,70 +92,70 @@ for UTIL in $(seq 100 50 400); do
 done
 
 
-# # DEFINE CONFIGURATION 1
-# CFG=linear_20
-# 
-
-# wait
-# run    "${EXP}/${CFG}"
-
-
 # DEFINE CONFIGURATION 1
-# CFG=linear_20_limassign_0_regen_10
-# config "LIMITASSIGN" 0
-# config "NOTES" "\"Testing maxload 12 and new resource regen/forage; limassign 50 vs limassign 0; regen 5 vs regen 10\""
-
-# wait
-# run    "${EXP}/${CFG}"
+CFG=linear_20
 
 
+wait
+run    "${EXP}/${CFG}"
+
+
+DEFINE CONFIGURATION 1
+CFG=linear_20_limassign_0_regen_10
+config "LIMITASSIGN" 0
+config "NOTES" "\"Testing maxload 12 and new resource regen/forage; limassign 50 vs limassign 0; regen 5 vs regen 10\""
+
+wait
+run    "${EXP}/${CFG}"
 
 
 
-# EXP=115_patch_size
-
-# config "REPS" 3
-# config "NUM1" 10
-
-# #-----------------------
-# config "SCNAME" "resource_market_limit" 
-# config "MAXWORKERS" 2
-
-# declare -a arr=(0.20 0.16 0.12 0.08 0.04)
-# for patch_radius in "${arr[@]}"; do 
-# 	loopconfig "patches" "radius" patch_radius	
-# 	wait
-# 	run    "${EXP}/limit_2" $1
-# done	
-
-# #-----------------------
-# config "SCNAME" "resource_market_egreedy" 
-# config "EPSILON" 50
-
-# declare -a arr=(0.20 0.16 0.12 0.08 0.04)
-# for patch_radius in "${arr[@]}"; do 
-# 	loopconfig "patches" "radius" patch_radius	
-# 	wait
-# 	run    "${EXP}/egreedy_50" $1
-# done
-
-# #-----------------------
-# config "SCNAME" "resource_market_egreedy"
-
-# CFG=limit_3
-# config "EPSILON" 50
-# wait
-# run    "${EXP}/${CFG}" $1
-
-# CFG=egreedy_20
-# config "EPSILON" 20
-# wait
-# run    "${EXP}/${CFG}"
 
 
-# for EPSILON in $(seq 0 10 100); do 
-# 	CFG=egreedy_${EPSILON}
-# 	config "EPSILON" ${EPSILON}
-# 	wait
-# 	run    "${EXP}/${CFG}"
-# done
+EXP=115_patch_size
+
+config "REPS" 3
+config "NUM1" 10
+
+#-----------------------
+config "SCNAME" "resource_market_limit" 
+config "MAXWORKERS" 2
+
+declare -a arr=(0.20 0.16 0.12 0.08 0.04)
+for patch_radius in "${arr[@]}"; do 
+	loopconfig "patches" "radius" patch_radius	
+	wait
+	run    "${EXP}/limit_2" $1
+done	
+
+#-----------------------
+config "SCNAME" "resource_market_egreedy" 
+config "EPSILON" 50
+
+declare -a arr=(0.20 0.16 0.12 0.08 0.04)
+for patch_radius in "${arr[@]}"; do 
+	loopconfig "patches" "radius" patch_radius	
+	wait
+	run    "${EXP}/egreedy_50" $1
+done
+
+#-----------------------
+config "SCNAME" "resource_market_egreedy"
+
+CFG=limit_3
+config "EPSILON" 50
+wait
+run    "${EXP}/${CFG}" $1
+
+CFG=egreedy_20
+config "EPSILON" 20
+wait
+run    "${EXP}/${CFG}"
+
+
+for EPSILON in $(seq 0 10 100); do 
+	CFG=egreedy_${EPSILON}
+	config "EPSILON" ${EPSILON}
+	wait
+	run    "${EXP}/${CFG}"
+done

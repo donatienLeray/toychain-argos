@@ -58,8 +58,8 @@ export SEED=1500
 export TIMELIMIT=100
 export LENGTH=5000
 export SLEEPTIME=5
-export REPS=1
-export NOTES="debug logs"
+export REPS=5
+export NOTES="Variation of utility of the resource between 100 and 400"
 
 
 

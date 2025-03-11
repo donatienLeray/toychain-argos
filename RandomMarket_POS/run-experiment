@@ -17,7 +17,7 @@ config() {
 ### USAGE:   loopconfig "dictionary" "parameter" value
 ### EXAMPLE: loopconfig "patches" "radius" 0.05 
 loopconfig() {
-	sed -i "/\['${1}'\]\['${2}'\]/ s/=.*/= ${3}/" loop_functions/loop_params.py
+	sed -i "/\['${1}'\]\['${2}'\]/ s/=.*/= ${3}/" loop_functions/params.py
 }
 
 ##################################################################################
@@ -79,14 +79,16 @@ run() {
 
 
 # DEFINE EXPERIMENT
-EXP=varyutil2
-config "REPS" 5
-config "LENGTH" 5000
-config "NOTES" "\"Variation of utility of the resource between 100 and 400\""
+EXP=vary_decay
+config "TPS" 30
+config "REPS" 1
+config "LENGTH" 500
+config "NOTES" "\"Variation of decay for hello_fixed_last lottery update from 50 to 500 \""
+loopconfig "scs" "lottery_update" "'hello_fixed_last'"
 
-for UTIL in $(seq 100 50 400); do 
+for UTIL in $(seq 50 50 100); do 
 	CFG=${UTIL}
-	loopconfig "patches" "utility" "{'red': 1, 'green':  1, 'blue': ${UTIL}, 'yellow': 1}"
+	loopconfig "scs" "decay" "${UTIL}"
 	wait
 	run    "${EXP}/${CFG}"
 done

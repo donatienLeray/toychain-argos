@@ -59,6 +59,10 @@ TPS = int(lp['environ']['TPS'])
 global clocks, accums, logs, other
 clocks, accums, logs, other = dict(), dict(), dict(), dict()
 
+# debug variables
+global step_count
+step_count = 0
+
 clocks['simlog'] = Timer(10*TPS)
 # accums['distance'] = Accumulator()
 # accums['distance_forage'] = Accumulator()
@@ -305,6 +309,7 @@ def pre_step():
 def post_step():
     global startFlag, clocks, accums, resource_counter
     global RAM, CPU
+    global step_count
 
     if not startFlag:
         startFlag = True
@@ -331,6 +336,11 @@ def post_step():
     logs['loop'].log([str(value) for value in resource_counter.values()] 
               + [sum(resource_counter.values())] 
               + [sum([resource_counter[x]*lp['patches']['utility'][x] for x in lp['patches']['utility']])])
+    
+    # makeing loading bar
+    total_steps = int(os.environ['TPS']) * int(os.environ['LENGTH'])
+    loading_bar(total_steps, step_count, TPS=TPS)
+    step_count += 1
 
 
 def is_experiment_finished():
