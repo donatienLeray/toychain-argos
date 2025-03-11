@@ -28,7 +28,7 @@ export CON2="${EXPERIMENTFOLDER}/controllers/main_greedy.py"
 
 export RABRANGE="0.5"
 export WHEELNOISE="0"
-export TPS=10
+export TPS=30
 export DENSITY="2"
 
 export NUMROBOTS=$(echo $NUM1+$NUM2 | bc)
@@ -37,7 +37,7 @@ export ARENADIMH=$(echo "scale=3 ; $ARENADIM/2" | bc)
 export STARTDIM=$(echo "scale=3 ; $ARENADIM/5" | bc)
 
 # [GETH]
-export BLOCKPERIOD=2
+export BLOCKPERIOD=10
 
 # [SC]
 export MAXWORKERS=15
@@ -56,10 +56,10 @@ export WINSIZE=5
 # [OTHER]
 export SEED=1500
 export TIMELIMIT=100
-export LENGTH=5000
+export LENGTH=100
 export SLEEPTIME=5
 export REPS=1
-export NOTES="debug logs"
+export NOTES="Variation of decay for hello_fixed_last lottery update from 50 to 500 "
 
 
 

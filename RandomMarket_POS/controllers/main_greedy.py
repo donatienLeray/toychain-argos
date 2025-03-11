@@ -21,8 +21,8 @@ from controllers.aux import *
 from controllers.aux import Timer
 from controllers.statemachine import *
 
-from controllers.control_params import params as cp
-from loop_functions.loop_params import params as lp
+from controllers.params import params as cp
+from loop_functions.params import params as lp
 
 from toychain.src.utils.helpers import gen_enode
 from toychain.src.consensus.ProofOfAuth import ProofOfAuthority

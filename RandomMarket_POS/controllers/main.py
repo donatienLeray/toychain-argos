@@ -11,22 +11,22 @@ experimentFolder = os.environ['EXPERIMENTFOLDER']
 sys.path += [mainFolder, experimentFolder]
 
 from controllers.actusensors.movement     import RandomWalk, Navigate, Odometry, OdoCompass, GPS
-from controllers.actusensors.groundsensor import ResourceVirtualSensor, Resource
+#from controllers.actusensors.groundsensor import ResourceVirtualSensor, Resource
 from controllers.actusensors.erandb       import ERANDB
 from controllers.actusensors.rgbleds      import RGBLEDs
 from controllers.utils import *
-from controllers.utils import Timer
-from controllers.utils import FiniteStateMachine
 
 from controllers.params import params as cp
 from loop_functions.params import params as lp
 
-from toychain.src.utils.helpers import gen_enode
+from toychain.src.utils.helpers import gen_enode, enode_to_id
 #from toychain.src.consensus.ProofOfAuth import ProofOfAuthority, BLOCK_PERIOD
 from toychain.src.consensus.ProofOfStake import ProofOfStake , BLOCK_PERIOD
 from toychain.src.Node import Node
 from toychain.src.Block import Block, State
 from toychain.src.Transaction import Transaction
+
+from collections import Counter
 
 # /* Global Variables */
 #######################################################################
@@ -46,7 +46,10 @@ startvar ={
     'private':{},
     'balances':{},
     'all_hellos':{},
-    'lottery':[gen_enode(i+1) for i in range(int(lp['environ']['NUMROBOTS']))]
+    'lottery':[gen_enode(i+1) for i in range(int(lp['environ']['NUMROBOTS']))],
+    'trans_reward': int(lp['scs']['trans_reward']),
+    'decay': int(lp['scs']['decay']),
+    'lottery_update': lp['scs']['lottery_update']
 }
 
 GENESIS = Block(0, 0000, [], 0, 0, 0, 0, nonce = 1, state = State(startvar))
@@ -305,9 +308,15 @@ def destroy():
         if len(txs) != len(set([tx.id for tx in txs])):
             print(f'REPEATED TRANSACTIONS ON CHAIN: #{len(txs)-len(set([tx.id for tx in txs]))}')
 
-        for key, value in w3.sc.state.items():
-            print(f"{key}: {value}")
-
+        if lp['debug']['main']:
+            
+            for key, value in w3.sc.state.items():
+                print(f"{key}: {value}")
+                
+            counter = Counter(w3.sc.state['lottery'])
+            for enode, count in counter.items():
+                print(f"{enode_to_id(enode)}: {count}")
+    
         name   = 'block.csv'
         header = ['TELAPSED','TIMESTAMP','BLOCK', 'HASH', 'PHASH', 'DIFF', 'TDIFF', 'SIZE','TXS', 'UNC', 'PENDING', 'QUEUED']
         logs['block'] = Logger(f"{experimentFolder}/logs/{me.id}/{name}", header, ID = me.id)
@@ -339,7 +348,6 @@ def destroy():
                 block.state.balances.get(me.id,0),
                 block.state.n
                 ])
-
         
     print('Killed robot '+ me.id)
 

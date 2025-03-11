@@ -24,6 +24,19 @@ params['generic']['rab_range'] = eval(os.environ["RABRANGE"])
 params['generic']['block_period'] = eval(os.environ["BLOCKPERIOD"])
 params['generic']['max_workers'] = eval(os.environ["MAXWORKERS"])
 params['generic']['regen_rate'] = eval(os.environ["REGENRATE"])
+params['generic']['block_period'] = eval(os.environ["BLOCKPERIOD"])
 
 # Initialize the files which store QT_draw information 
 params['files'] = dict()
+
+# parameters of the smart contract
+params['scs'] = dict()
+params['scs']['trans_reward'] = 1
+params['scs']['decay'] = 100
+params['scs']['lottery_update'] = 'hello_fixed_last'
+
+# debug parameters
+params['debug'] = dict()
+params['debug']['main'] = False
+params['debug']['loop'] = True
+
