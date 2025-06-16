@@ -10,14 +10,9 @@ mainFolder = os.environ['MAINFOLDER']
 experimentFolder = os.environ['EXPERIMENTFOLDER']
 sys.path += [mainFolder, experimentFolder]
 
-from controllers.actusensors.groundsensor import Resource
 from controllers.utils import Vector2D
 from controllers.params import params as cp
 from loop_functions.params import params as lp
-
-if eval(os.environ['RUN_TKUSER']):
-    from loop_functions.tkuser_function import BlockchainGUI
-    import threading
 
 lp['generic']['show_rays'] = False
 lp['generic']['show_pos'] = True
@@ -28,7 +23,7 @@ rob_diam   = 0.07/2
 
 # /* Global Functions */
 #######################################################################
-global robot, environment, tkuser
+global robot, environment
 
 def hash_to_rgb(hash_value):
     # Generate a hash object from the input value
@@ -45,18 +40,6 @@ def hash_to_rgb(hash_value):
     # Return the RGB color value as a tuple
     return [r, g, b]
 
-# /* tk_user Function */
-#######################################################################
-
-if eval(os.environ['RUN_TKUSER']):
-    def run_tkuser():
-        global tkuser
-        tkuser = BlockchainGUI()
-        tkuser.start()
-    tkuser_thread = threading.Thread(target=run_tkuser, daemon=True)
-    tkuser_thread.start()
-
-
 # /* ARGoS Functions */
 #######################################################################
 
@@ -67,12 +50,6 @@ def draw_in_world():
     pass
 	
 def draw_in_robot():
-
-    if "tkuser" in globals():
-        prod_block = robot.variables.get_attribute("prod_block")
-        if prod_block:
-            tkuser.add_block(prod_block)
-
 
     # Draw block hash and state hash with circles
     color_state = hash_to_rgb(robot.variables.get_attribute("state_hash"))
