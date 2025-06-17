@@ -32,11 +32,11 @@ params['files'] = dict()
 # parameters of the smart contract
 params['scs'] = dict()
 params['scs']['trans_reward'] = 1
-params['scs']['decay'] = 100
+params['scs']['decay'] = 50
 params['scs']['lottery_update'] = 'hello_fixed_last'
 
 # debug parameters
 params['debug'] = dict()
-params['debug']['main'] = False
+params['debug']['main'] = True
 params['debug']['loop'] = True
 

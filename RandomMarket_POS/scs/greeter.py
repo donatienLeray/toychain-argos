@@ -1,6 +1,5 @@
 from toychain.src.State import StateMixin
 from toychain.src.utils.helpers import gen_enode, enode_to_id
-from collections import Counter
 import logging
 
 logger = logging.getLogger('sc')
@@ -159,3 +158,4 @@ class Contract(StateMixin):
     
     def none(self):
         pass
+    

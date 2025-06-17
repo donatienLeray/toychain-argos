@@ -23,7 +23,8 @@ from toychain.src.utils.helpers import gen_enode, enode_to_id
 #from toychain.src.consensus.ProofOfAuth import ProofOfAuthority, BLOCK_PERIOD
 from toychain.src.consensus.ProofOfStake import ProofOfStake , BLOCK_PERIOD
 from toychain.src.Node import Node
-from toychain.src.Block import Block, State
+from toychain.src.Block import Block
+from scs.greeter import Contract as State
 from toychain.src.Transaction import Transaction
 
 from collections import Counter

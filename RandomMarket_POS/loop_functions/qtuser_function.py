@@ -57,7 +57,10 @@ def draw_in_robot():
     color_block = hash_to_rgb(robot.variables.get_attribute("block_hash"))
     color_mempl = hash_to_rgb(robot.variables.get_attribute("mempl_hash"))
     
-    tx_count = int(robot.variables.get_attribute("mempl_size"))
+    if robot.variables.get_attribute("mempl_size") == '':
+        tx_count = 0
+    else:
+        tx_count = int(robot.variables.get_attribute("mempl_size"))
 
     environment.qt_draw.circle([0,0,0.010], [], 0.100, color_state, True)
     environment.qt_draw.circle([0,0,0.011], [], 0.075, color_block, True)

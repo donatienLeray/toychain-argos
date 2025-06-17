@@ -29,6 +29,7 @@ from toychain.src.consensus.ProofOfAuth import ProofOfAuthority
 from toychain.src.consensus.ProofOfWork import ProofOfWork
 from toychain.src.Node import Node
 from toychain.src.Block import Block
+from scs.greeter import Contract as State
 from toychain.src.Transaction import Transaction
 
 # /* Global Variables */

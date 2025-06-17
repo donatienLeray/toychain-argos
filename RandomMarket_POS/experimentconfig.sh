@@ -56,7 +56,7 @@ export WINSIZE=5
 # [OTHER]
 export SEED=1500
 export TIMELIMIT=100
-export LENGTH=100
+export LENGTH=500
 export SLEEPTIME=5
 export REPS=1
 export NOTES="Variation of decay for hello_fixed_last lottery update from 50 to 500 "
