@@ -94,5 +94,5 @@ Then run an experiment
 
 ```
 cd toychain-argos/HelloNeighbor
-./starter -s
+./starter.sh -s
 ```

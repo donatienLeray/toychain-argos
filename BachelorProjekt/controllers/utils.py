@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import math, time
 import sys, os
+from aenum import Enum, auto
 # import socket, threading
 # from multiprocessing.connection import Listener, Client
 

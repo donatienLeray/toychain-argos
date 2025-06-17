@@ -3,16 +3,18 @@
 # /* Import Packages */
 #######################################################################
 import sys, os
-import hashlib
 
 mainFolder = os.environ['MAINFOLDER']
 experimentFolder = os.environ['EXPERIMENTFOLDER']
 sys.path += [mainFolder, experimentFolder]
 
-from controllers.actusensors.groundsensor import Resource
-from controllers.utils import Vector2D
-from controllers.params import params as cp
+from loop_functions.utils import hash_to_rgb
 from loop_functions.params import params as lp
+from toychain.src.utils.helpers import gen_enode
+from toychain.src.Node import Node
+from toychain.src.Block import Block
+from toychain.src.consensus.ProofOfStake import ProofOfStake
+from scs.greeter import Contract as State
 
 lp['generic']['show_rays'] = False
 lp['generic']['show_pos'] = True
@@ -25,32 +27,40 @@ rob_diam   = 0.07/2
 #######################################################################
 global robot, environment
 
-def hash_to_rgb(hash_value):
-    # Generate a hash object from the input value
-    hash_object = hashlib.sha256(hash_value.encode())
+enodes = [gen_enode(i+1) for i in range(int(lp['environ']['NUMROBOTS']))]
 
-    # Get the first 3 bytes of the hash digest
-    hash_bytes = hash_object.digest()[:3]
+# Initialize the monitoring glassnode
+startvar ={
+    "n":0,
+    'private':{},
+    'balances':{},
+    'all_hellos':{},
+    'lottery':enodes,
+    'trans_reward': int(lp['scs']['trans_reward']),
+    'decay': int(lp['scs']['decay']),
+    'lottery_update': lp['scs']['lottery_update']
+}
 
-    # Convert the bytes to an RGB color value
-    r = hash_bytes[0]
-    g = hash_bytes[1]
-    b = hash_bytes[2]
+GENESIS = Block(0, 0000, [], 0, 0, 0, 0, nonce = 1, state = State(startvar))
 
-    # Return the RGB color value as a tuple
-    return [r, g, b]
 
-# /* ARGoS Functions */
+glassnode = Node('0', '127.0.0.1', 1233, ProofOfStake(genesis = GENESIS))
 #######################################################################
 
 def init():
-	pass
-
+    pass
+    
 def draw_in_world():
-	pass
+
+    # Update glassnode
+	glassnode.step()
+	if glassnode.custom_timer.time() == 10:
+		glassnode.add_peers(enodes)
+		glassnode.start()
+		glassnode.run_explorer()
 	
 def draw_in_robot():
-
+    
     # Draw block hash and state hash with circles
     color_state = hash_to_rgb(robot.variables.get_attribute("state_hash"))
     color_block = hash_to_rgb(robot.variables.get_attribute("block_hash"))
