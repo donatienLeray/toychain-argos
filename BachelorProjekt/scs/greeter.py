@@ -35,12 +35,23 @@ class Contract(StateMixin):
     
     def update_lottery(self,block):
         
+        allowed_methods = {
+            "market_share":self.market_share,
+            "market_fixed":self.market_fixed,
+            "hello_shares":self.hello_shares,
+            "hello_fixed":self.hello_fixed,
+            "hello_fixed_last":self.hello_fixed_last
+         }
+        
         if not hasattr(self,self.lottery_update):
+            logger.debug(f"{self}.update_lottery called with no defined lottery_update")
             return
-        # if string is hello_fixed_last
-        if self.lottery_update == 'hello_fixed_last':
-            self.hello_fixed_last(block)
+        # if method is allowed call it.
+        func = allowed_methods.get(self.lottery_update)
+        if func:
+            func(block)
         else:
+            logger.warning(f"{self}.update_loterry: \"{self.update_lottery}\" not allowed!")
             getattr(self,self.lottery_update)()   
         
         

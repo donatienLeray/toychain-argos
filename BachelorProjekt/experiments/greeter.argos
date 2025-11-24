@@ -6,7 +6,7 @@
   <!-- ************************* -->
   <framework>
     <system threads="1" method="balance_quantity" />
-    <experiment length="500"
+    <experiment length="100"
       ticks_per_second="30"/>
   </framework>
 
@@ -67,7 +67,7 @@
   <!-- *********************** -->
   <!-- * Arena configuration * -->
   <!-- *********************** -->
-  <arena size="3.162, 3.162, 1.5" center="0,0,0">
+  <arena size="3.162, 3.162, 9" center="0,0,0">
 
  <floor id="f" source="image" path="/home/dodo/toychain-argos/BachelorProjekt/experiments/floors/market.png" />
 
@@ -140,8 +140,11 @@
         <placement index="0" position="0,0,8" up="1,0,0" look_at="0,0,0" lens_focal_length="50" />
         <placement index="1" position="0,0,1.5" up="1,0,0" look_at="0,0,0" lens_focal_length="20" />
         <placement index="2" position="-10.0732,8.01142,10.9277" look_at="-9.48792,7.5567,10.2564" up="0.530115,-0.411842,0.741191" lens_focal_length="86.8" />
+        <placement index="3" position="6.15367e-16,10.0497,9" look_at="0,0,0" up="0,0,1" lens_focal_length="132" />
+
       </placements>
     </camera>
+  
     </qt-opengl>
 
   </visualization>

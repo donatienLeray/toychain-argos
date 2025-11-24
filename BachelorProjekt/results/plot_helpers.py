@@ -19,8 +19,10 @@ from networkx.algorithms.shortest_paths.generic import shortest_path as get_main
 
 global tstart
 
-datadir = '/home/eksander/toychain-argos/MarketForaging/results/data'
-plotdir = '/home/eksander/toychain-argos/MarketForaging/results/plots/'
+# Directory where helper.py resides
+base_dir = os.path.dirname(os.path.abspath(__file__))
+datadir = os.path.join(base_dir, "data")
+plotdir = os.path.join(base_dir, "plots")
 
 def tic():
     global tstart

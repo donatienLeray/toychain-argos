@@ -5,6 +5,9 @@
 import random
 import sys, os
 
+# for UML
+import objgraph
+
 
 mainFolder = os.environ['MAINFOLDER']
 experimentFolder = os.environ['EXPERIMENTFOLDER']
@@ -112,6 +115,7 @@ def init():
     robot.log.info('Initialising Python Geth Console...')
     #w3 = Node(robotID, robotIP, 1233 + int(robotID), ProofOfAuthority(genesis = GENESIS))
     w3 = Node(robotID, robotIP, 1233 + int(robotID), ProofOfStake(genesis = GENESIS))
+    objgraph.show_refs([w3], filename='graph.png')
 
     # /* Init an instance of peer for this Pi-Puck */
     me = Peer(robotID, robotIP, w3.enode, w3.key)

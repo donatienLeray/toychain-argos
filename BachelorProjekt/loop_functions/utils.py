@@ -6,6 +6,7 @@ import math
 import sys, os, psutil
 import hashlib
 import time
+import shutil
 
 mainFolder = os.environ['MAINFOLDER']
 experimentFolder = os.environ['EXPERIMENTFOLDER']
@@ -59,10 +60,15 @@ def hash_to_rgb(hash_value):
     # Return the RGB color value as a tuple
     return [r, g, b]
 
-def loading_bar(total, current, length = 60, TPS = None):
+def loading_bar(total, current, TPS = None):
     """
     Prints a loading bar
     """ 
+    # Get the terminal size
+    size = shutil.get_terminal_size()
+
+    # Get the width (number of columns)
+    length = size.columns - 45
     # loading bar
     progress = int(current / total * length)
     percentage = int(((current * 100) // total))

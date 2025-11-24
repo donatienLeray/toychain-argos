@@ -1,15 +1,20 @@
 #!/bin/bash
 # Starts an experiment
 #
-# Options:
-# --reset    or -r  : will reset everything blockchain related
-# --start    or -s  : will start the experiment
-# --startz   or -sz : will start with no visualization
-# --logs     or -l  : will display monitor.log for all robots
-# --python   or -p  : will display python console for all robots
-# Example: 
-# . starter.sh -r -s -l -p
 
+# print help 
+if [[ $1 == "--help" || $1 == "-h" ]]; then
+    echo "Usage: . starter.sh [options]"
+    echo "Options:"
+    echo "--reset    or -r  : will reset everything blockchain related"
+    echo "--start    or -s  : will start the experiment"
+    echo "--start-novis   or -sz : will start with no visualization"
+    echo "--logs     or -l  : will display monitor.log for all robots"
+    echo "--python   or -p  : will display python console for all robots"
+    echo "Example: "
+    echo ". starter.sh -r -s -l -p"
+    exit 0
+fi
 source experimentconfig.sh
 
 echo "+-----------------------------------------------------------+"
@@ -52,6 +57,8 @@ eval $(echo "rm -rf logs/{$(($NUMROBOTS+1))..100}")
 #     . test-tcp 4000
 #     sleep 0.5
 # done
+
+
 
 echo "+-----------------------------------------------------------+"
 echo "Starting Experiment"
