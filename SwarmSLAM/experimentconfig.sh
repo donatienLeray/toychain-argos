@@ -14,12 +14,12 @@ export SCNAME="greeter"
 export SCFILE="${EXPERIMENTFOLDER}/scs/${SCNAME}.py" 
 
 # [ARGOS]
-export NUM1=5
+export NUM1=10
 export CON1="${EXPERIMENTFOLDER}/controllers/main.py"
 
 export RABRANGE="1"
 export WHEELNOISE="0"
-export TPS=10
+export TPS=30
 # export DENSITY="1"
 
 export NUMROBOTS=$(echo $NUM1 | bc)

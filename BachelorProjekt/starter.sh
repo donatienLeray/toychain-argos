@@ -29,9 +29,9 @@ envsubst < $ARGOSTEMPLATE > $ARGOSFILE
 # echo "Sending python scripts"
 # cp -r $EXPERIMENTFOLDER/controllers/docker/* $DOCKERFOLDER/geth/python_scripts/
 
-echo "+-----------------------------------------------------------+"
-echo "Sending smart contracts"
-cp $SCFILE $TOYCHFOLDER/scs/deploy.py
+# echo "+-----------------------------------------------------------+"
+# echo "Sending smart contracts"
+# cp $SCFILE $TOYCHFOLDER/scs/deploy.py
 
 echo "+-----------------------------------------------------------+"
 echo "Cleaning logs folder..."

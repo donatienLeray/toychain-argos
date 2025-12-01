@@ -2,7 +2,7 @@
 
 # /* Import Packages */
 #######################################################################
-import sys, os
+import sys, os, importlib, warnings
 
 mainFolder = os.environ['MAINFOLDER']
 experimentFolder = os.environ['EXPERIMENTFOLDER']
@@ -13,8 +13,35 @@ from loop_functions.params import params as lp
 from toychain.src.utils.helpers import gen_enode
 from toychain.src.Node import Node
 from toychain.src.Block import Block
-from toychain.src.consensus.ProofOfStake import ProofOfStake
-from scs.greeter import Contract as State
+#-----------------------------
+# toychain consensus mechanism
+# import the correct consensus mechanism dynamically
+if 'consensus' in lp and 'module' in lp['consensus']:
+    module_name = "toychain.src.consensus." + lp['consensus']['module']
+    module = importlib.import_module(module_name)
+    ConsensusClass = getattr(module, lp['consensus']['class'])
+    BLOCK_PERIOD = getattr(module, "BLOCK_PERIOD")
+else: # default
+    from toychain.src.consensus.ProofOfAuth import ProofOfAuthority as ConsensusClass, BLOCK_PERIOD 
+    warnings.showwarning(f"No consensus module specified in loop_function params, defaulting to ProofOfAuthority")   
+# same as choosisng:
+#from toychain.src.consensus.ProofOfConnection import ProofOfConnection , BLOCK_PERIOD
+#from toychain.src.consensus.ProofOfAuth import ProofOfAuthority , BLOCK_PERIOD
+#from toychain.src.consensus.ProofOfWork import ProofOfWork, BLOCK_PERIOD
+#from toychain.src.consensus.ProofOfStake import ProofOfStake, BLOCK_PERIOD
+#-----------------------------
+#-----------------------------
+# toychain State
+
+# import the correct smart contract module dynamically
+if 'scs' in lp and 'files' in lp['scs']:
+    module_name = "scs." + lp['scs']['files']       
+    module = importlib.import_module(module_name)
+    State = getattr(module, "Contract") 
+else: # default
+    from scs.poa_w import Contract as State
+#-----------------------------
+
 
 lp['generic']['show_rays'] = False
 lp['generic']['show_pos'] = True
@@ -29,22 +56,11 @@ global robot, environment
 
 enodes = [gen_enode(i+1) for i in range(int(lp['environ']['NUMROBOTS']))]
 
-# Initialize the monitoring glassnode
-startvar ={
-    "n":0,
-    'private':{},
-    'balances':{},
-    'all_hellos':{},
-    'lottery':enodes,
-    'trans_reward': int(lp['scs']['trans_reward']),
-    'decay': int(lp['scs']['decay']),
-    'lottery_update': lp['scs']['lottery_update']
-}
-
-GENESIS = Block(0, 0000, [], 0, 0, 0, 0, nonce = 1, state = State(startvar))
+#initialize glassnode Genesis Block
+GENESIS = Block(0, 0000, [], 0, 0, 0, 0, nonce = 1, state = State())
 
 
-glassnode = Node('0', '127.0.0.1', 1233, ProofOfStake(genesis = GENESIS))
+glassnode = Node('0', '127.0.0.1', 1233, ConsensusClass(genesis = GENESIS))
 #######################################################################
 
 def init():

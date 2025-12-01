@@ -1,6 +1,8 @@
 from toychain.src.State import StateMixin
-from toychain.src.utils.helpers import gen_enode, enode_to_id
+from toychain.src.utils.helpers import gen_enode
+from loop_functions.params import params as lp
 import logging
+import warnings
 
 logger = logging.getLogger('sc')
 
@@ -16,10 +18,24 @@ class Contract(StateMixin):
             self.private     = {}
             self.balances    = {}
 
-            # Init your own state variables
+            # Custom state variables
+            # required parameters for initialization
+            required = [
+                ("scs", "update"),
+                ("scs", "decay"),
+                ("scs", "trans_reward"),
+                ("generic", "num_robots")
+            ]
+            # check for required parameters are given
+            for k,j in required:
+                if k not in lp or j not in lp[k]:
+                    print(f"\033[93mMissing required parameter lp['{k}']['{j}'] for initializing smart contract state variables.\033[0m")
+                
             self.all_hellos  = {}
-            self.lottery = []
-            self.trans_reward = 0
+            self.lottery = [gen_enode(i+1) for i in range(int(lp['generic']['num_robots']))]
+            self.trans_reward = int(lp['scs']['trans_reward'])
+            self.decay = int(lp['scs']['decay'])
+            self.update = lp['scs']['update']
 
     def Hello(self, neighbor):
         
@@ -43,34 +59,17 @@ class Contract(StateMixin):
             "hello_fixed_last":self.hello_fixed_last
          }
         
-        if not hasattr(self,self.lottery_update):
-            logger.debug(f"{self}.update_lottery called with no defined lottery_update")
+        if not hasattr(self,self.update):
+            logger.debug(f"{self}.update called with no defined update")
             return
         # if method is allowed call it.
-        func = allowed_methods.get(self.lottery_update)
+        func = allowed_methods.get(self.update)
         if func:
             func(block)
         else:
-            logger.warning(f"{self}.update_loterry: \"{self.update_lottery}\" not allowed!")
-            getattr(self,self.lottery_update)()   
-        
-        
-        # for each robot print ID, Market Share, Balance
-        #counter = Counter(self.lottery)
-        #counter = dict(sorted(counter.items()))
-        #
-        #for enode, count in counter.items():
-        #    id = enode_to_id(enode)
-        #    try:
-        #       balance = self.balances[str(id)] 
-        #    except:
-        #        balance = 0
-        #    try:
-        #        hello = len(self.all_hellos[id])
-        #    except:
-        #        hello = 0
-        #    print(f"ID:{id}, V:{count}, B:{balance}, H:{hello}")
-        #print(f"---------------------")
+            logger.warning(f"{self}.update: \"{self.update}\" not allowed!")
+            getattr(self,self.update)()   
+
     
     # Note: ends up in Monopoly       
     def market_share(self):

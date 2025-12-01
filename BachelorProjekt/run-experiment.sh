@@ -104,19 +104,77 @@ run() {
 
 
 # DEFINE EXPERIMENT
-EXP=vary_decay
-config "TPS" 30
-config "REPS" 1
-config "LENGTH" 500
-config "NOTES" "\"Variation of decay for hello_fixed_last lottery update from 50 to 500 \""
-loopconfig "scs" "lottery_update" "'hello_fixed_last'"
+#EXP=vary_decay
+#config "TPS" 30
+#config "REPS" 1
+#config "LENGTH" 500
+#config "NOTES" "\"Variation of decay for hello_fixed_last lottery update from 50 to 500 \""
+#loopconfig "scs" "lottery_update" "'hello_fixed_last'"
+#
+#for UTIL in $(seq 50 50 100); do 
+#	CFG=${UTIL}
+#	loopconfig "scs" "decay" "${UTIL}"
+#	wait
+#	run "${EXP}/${CFG}" $@
+#done
 
-for UTIL in $(seq 50 50 100); do 
-	CFG=${UTIL}
-	loopconfig "scs" "decay" "${UTIL}"
-	wait
-	run "${EXP}/${CFG}" $@
+# DEFINE EXPERIMENT
+#EXP=vary_decay_on_poc
+#config "TPS" 30
+#config "REPS" 1
+#config "LENGTH" 500
+#config "NOTES" "\"Variation of decay for hello_fixed_last lottery update from 50 to 500 \""
+#loopconfig "scs" "lottery_update" "'hello_fixed_last'"
+#
+#for UTIL in $(seq 10 10 50); do 
+#	CFG=${UTIL}
+#	loopconfig "scs" "decay" "${UTIL}"
+#	wait
+#	run "${EXP}/${CFG}" $@
+#done
+
+
+EXP=different_consensus_with_increasing_robots
+# run experiment with different consensus mechanisms
+for consensus in "ProofOfAuthority" "ProofOfConnection" "ProofOfWork" "ProofOfStake"; do
+
+	# standard values
+	config "TPS" 30
+	config "REPS" 1
+	config "LENGTH" 500
+	if [ "$consensus" == "ProofOfAuthority" ]; then
+		loopconfig "scs" "module" "ProofOfAuth"
+	else
+		loopconfig "scs" "module" "$consensus"
+	fi
+	loopconfig "scs" "class" "$consensus"
+
+	# config the right state contract
+	match "$consensus" in
+		"ProofOfAuthority")  config "SCNAME" "poa_w" ;;
+		"ProofOfConnection") config "SCNAME" "poc" ;;
+		"ProofOfWork")       config "SCNAME" "poa_w" ;;
+		"ProofOfStake")      config "SCNAME" "pos" ;;
+		*)                    #errormessage
+			echo "Unknown consensus mechanism: $consensus"
+			exit 1
+			;;
+	esac
+
+	# run experiment with increasing range of robots
+	for UTIL in $(seq 10 5 30); do 
+		#name of the configuration
+		CFG=${consensus}_robots_${UTIL}
+		# set number of robots
+		config "NUMROBOTS" "${UTIL}"
+		# run experiment
+		wait
+		run "${EXP}/${CFG}" $@
+	done
+
 done
+
+
 
 
 # # DEFINE CONFIGURATION 1

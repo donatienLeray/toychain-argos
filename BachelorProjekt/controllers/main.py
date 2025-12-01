@@ -4,31 +4,61 @@
 #######################################################################
 import random
 import sys, os
-
+import warnings
+from collections import Counter
 # for UML
 import objgraph
-
-
+#-----------------------------
 mainFolder = os.environ['MAINFOLDER']
 experimentFolder = os.environ['EXPERIMENTFOLDER']
 sys.path += [mainFolder, experimentFolder]
-
+#-----------------------------
+# controllers
 from controllers.actusensors.movement     import RandomWalk
 from controllers.actusensors.erandb       import ERANDB
 from controllers.actusensors.rgbleds      import RGBLEDs
 from controllers.utils import *
-
+#-----------------------------
+# Parameters
 from controllers.params import params as cp
 from loop_functions.params import params as lp
-
+#-----------------------------
+# helpers
 from toychain.src.utils.helpers import gen_enode, enode_to_id
-from toychain.src.consensus.ProofOfStake import ProofOfStake , BLOCK_PERIOD
-from toychain.src.Node import Node
+import importlib
+#-----------------------------
+# toychain consensus mechanism
+# import the correct consensus mechanism dynamically
+if 'consensus' in lp and 'module' in lp['consensus']:
+    module_name = "toychain.src.consensus." + lp['consensus']['module']
+    module = importlib.import_module(module_name)
+    ConsensusClass = getattr(module, lp['consensus']['class'])
+    BLOCK_PERIOD = getattr(module, "BLOCK_PERIOD")
+else: # default
+    from toychain.src.consensus.ProofOfAuth import ProofOfAuthority as ConsensusClass, BLOCK_PERIOD 
+    warnings.showwarning(f"No consensus module specified in loop_function params, defaulting to ProofOfAuthority")   
+# same as choosisng:
+#from toychain.src.consensus.ProofOfConnection import ProofOfConnection , BLOCK_PERIOD
+#from toychain.src.consensus.ProofOfAuth import ProofOfAuthority , BLOCK_PERIOD
+#from toychain.src.consensus.ProofOfWork import ProofOfWork, BLOCK_PERIOD
+#from toychain.src.consensus.ProofOfStake import ProofOfStake, BLOCK_PERIOD
+#-----------------------------
+# toychain core modules
 from toychain.src.Block import Block
-from scs.greeter import Contract as State
+from toychain.src.Node import Node
 from toychain.src.Transaction import Transaction
+#-----------------------------
+# toychain State
+# import the correct smart contract module dynamically
+if 'scs' in lp and 'files' in lp['scs']:
+    module_name = "scs." + lp['scs']['files']       
+    module = importlib.import_module(module_name)
+    State = getattr(module, "Contract") 
+else: # default
+    from scs.poa_w import Contract as State
+#-----------------------------
 
-from collections import Counter
+
 
 # /* Global Variables */
 #######################################################################
@@ -43,18 +73,8 @@ txList, tripList, submodules = [], [], []
 global clocks, counters, logs, txs
 clocks, counters, logs, txs = dict(), dict(), dict(), dict()
 
-startvar ={
-    "n":0,
-    'private':{},
-    'balances':{},
-    'all_hellos':{},
-    'lottery':[gen_enode(i+1) for i in range(int(lp['environ']['NUMROBOTS']))],
-    'trans_reward': int(lp['scs']['trans_reward']),
-    'decay': int(lp['scs']['decay']),
-    'lottery_update': lp['scs']['lottery_update']
-}
-
-GENESIS = Block(0, 0000, [], 0, 0, 0, 0, nonce = 1, state = State(startvar))
+# /* Genesis Block */
+GENESIS = Block(0, 0000, [], 0, 0, 0, 0, nonce = 1, state = State())
 
 # /* Logging Levels for Console and File */
 #######################################################################
@@ -114,8 +134,12 @@ def init():
     # /* Init web3.py */
     robot.log.info('Initialising Python Geth Console...')
     #w3 = Node(robotID, robotIP, 1233 + int(robotID), ProofOfAuthority(genesis = GENESIS))
-    w3 = Node(robotID, robotIP, 1233 + int(robotID), ProofOfStake(genesis = GENESIS))
-    objgraph.show_refs([w3], filename='graph.png')
+    w3 = Node(robotID, robotIP, 1233 + int(robotID), ConsensusClass(genesis = GENESIS))
+    robot.log.info(f'Consensus Mechanism: {ConsensusClass.__name__}')
+    robot.log.info(f'Smart Contract: {State.__name__}')
+    # draw object reference graph of web3 only for robot 1 (for visualization purposes)
+    if robotID == '1':
+        objgraph.show_refs([w3], filename=robotID+'graph.png')
 
     # /* Init an instance of peer for this Pi-Puck */
     me = Peer(robotID, robotIP, w3.enode, w3.key)
@@ -169,6 +193,7 @@ def init():
 #########################################################################################################################
 #### CONTROL STEP #######################################################################################################
 #########################################################################################################################
+
 
 def controlstep():
     global clocks, counters, startFlag, startTime
@@ -317,7 +342,7 @@ def destroy():
             for key, value in w3.sc.state.items():
                 print(f"{key}: {value}")
                 
-            counter = Counter(w3.sc.state['lottery'])
+            counter = Counter(w3.sc.state['connectivity'])
             for enode, count in counter.items():
                 print(f"{enode_to_id(enode)}: {count}")
     
