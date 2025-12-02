@@ -33,5 +33,4 @@ class Contract(StateMixin):
 
     def get_block_reward(self,block):
         
-        self.update_lottery(block)
-        return len(block.data) * self.trans_reward
+        return len(block.data)

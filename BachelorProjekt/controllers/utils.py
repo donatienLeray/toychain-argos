@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import math, time
 import sys, os
+import hashlib
 from aenum import Enum, auto
 # import socket, threading
 # from multiprocessing.connection import Listener, Client
@@ -743,3 +744,8 @@ def getFolderSize(folder):
         elif os.path.isdir(itempath):
             total_size += getFolderSize(itempath)
     return total_size
+
+def hash_to_int(value, length):
+    """Hash value, take first N bytes, convert back to int."""
+    hashed = hashlib.sha256(str(value).encode()).digest()[:length]
+    return int.from_bytes(hashed, byteorder="big")

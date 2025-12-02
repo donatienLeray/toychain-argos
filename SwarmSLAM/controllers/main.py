@@ -22,7 +22,7 @@ from controllers.params import params as cp
 from loop_functions.params import params as lp
 
 from toychain.src.utils.helpers import gen_enode
-from toychain.src.consensus.ProofOfAuth import ProofOfAuthority, BLOCK_PERIOD
+from toychain.src.consensus.ProofOfAuthority import ProofOfAuthority, BLOCK_PERIOD
 from toychain.src.Node import Node
 from toychain.src.Block import Block, State
 from toychain.src.Transaction import Transaction

@@ -3,6 +3,8 @@
 # /* Import Packages */
 #######################################################################
 import sys, os, importlib, warnings
+# for UML
+import objgraph
 
 mainFolder = os.environ['MAINFOLDER']
 experimentFolder = os.environ['EXPERIMENTFOLDER']
@@ -22,7 +24,7 @@ if 'consensus' in lp and 'module' in lp['consensus']:
     ConsensusClass = getattr(module, lp['consensus']['class'])
     BLOCK_PERIOD = getattr(module, "BLOCK_PERIOD")
 else: # default
-    from toychain.src.consensus.ProofOfAuth import ProofOfAuthority as ConsensusClass, BLOCK_PERIOD 
+    from toychain.src.consensus.ProofOfAuthority import ProofOfAuthority as ConsensusClass, BLOCK_PERIOD 
     warnings.showwarning(f"No consensus module specified in loop_function params, defaulting to ProofOfAuthority")   
 # same as choosisng:
 #from toychain.src.consensus.ProofOfConnection import ProofOfConnection , BLOCK_PERIOD
@@ -54,13 +56,22 @@ rob_diam   = 0.07/2
 #######################################################################
 global robot, environment
 
-enodes = [gen_enode(i+1) for i in range(int(lp['environ']['NUMROBOTS']))]
+#print Consensusmechanism and Smart Contract being used
+print(f"Consensus Mechanism: {ConsensusClass.__name__}")
+print(f"Smart Contract: {State.__name__}")
+
+enodes = [gen_enode(i+1) for i in range(int(lp['generic']['num_robots']))]
 
 #initialize glassnode Genesis Block
-GENESIS = Block(0, 0000, [], 0, 0, 0, 0, nonce = 1, state = State())
+if ConsensusClass.__name__ == 'ProofOfAuthority' or ConsensusClass.__name__ == 'ProofOfWork':
+    GENESIS = Block(0, 0000, [], enodes, 0, 0, 0, nonce = 1, state = State())
+else:
+    GENESIS = Block(0, 0000, [], 0, 0, 0, 0, nonce = 1, state = State())
 
 
 glassnode = Node('0', '127.0.0.1', 1233, ConsensusClass(genesis = GENESIS))
+# draw object reference graph of glassnode (for visualization purposes)
+objgraph.show_refs([glassnode], filename='Node_graph.png')
 #######################################################################
 
 def init():
@@ -87,9 +98,9 @@ def draw_in_robot():
     else:
         tx_count = int(robot.variables.get_attribute("mempl_size"))
 
-    environment.qt_draw.circle([0,0,0.010], [], 0.100, color_state, True)
-    environment.qt_draw.circle([0,0,0.011], [], 0.075, color_block, True)
-    environment.qt_draw.circle([0,0,0.012+0.002*tx_count], [], 0.050, color_mempl, True)
+    environment.qt_draw.circle([0,0,0.010], [], 0.100, color_state, True) #inner circle
+    environment.qt_draw.circle([0,0,0.011], [], 0.075, color_block, True) #middle circle
+    environment.qt_draw.circle([0,0,0.012+0.002*tx_count], [], 0.050, color_mempl, True) #outer circle
 
 
 def destroy():

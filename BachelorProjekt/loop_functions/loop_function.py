@@ -86,11 +86,12 @@ def post_step():
     # Logging of loop function variables
     logs['loop'].log([])
     
+    
+    # print steps so it gets overwritten
+    total_steps = int(os.environ['TPS']) * int(os.environ['LENGTH'])
     if lp['debug']['loop']:
-        # print steps so it gets overwritten
-        total_steps = int(os.environ['TPS']) * int(os.environ['LENGTH'])
         loading_bar(total_steps, step_count, TPS=TPS)
-        step_count += 1
+    step_count += 1
 
 def is_experiment_finished():
     pass
@@ -103,6 +104,8 @@ def destroy():
 
 def post_experiment():
     print("Finished from Python!")
+    # When your Python code is done
+    os.system('pkill argos3')
 
 
 

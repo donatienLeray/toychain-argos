@@ -9,7 +9,23 @@
 # --python   or -p  : will display python console for all robots
 # Example: 
 # . starter.sh -r -s -l -p
-source experimentconfig.sh
+print_usage() {
+	echo " 
+	Iterate over experimental settings and start experiments
+	  Options:
+	  --test    or -t  : will run the experiment only once without collecting data
+	  --reset   or -r  : will reset everything blockchain related
+	  --start   or -s  : will start the experiment
+	  --startz  or -sz : will start with no visualization
+	  --logs    or -l  : will display monitor.log for all robots
+	  --python  or -p  : will display python console for all robots
+	  Example:
+	  . starter.sh -r -sz
+	"
+	exit 0
+}
+
+source ./experimentconfig.sh
 
 DATAFOLDER="$EXPERIMENTFOLDER/results/data"
 
@@ -63,19 +79,16 @@ import() {
 run() {
 
 	# Configure experiment
-	. experimentconfig.sh
+	source ./experimentconfig.sh
 
 	test_flag=false
 	other_args=()
 
 	for arg in "${@:2}"; do
 	  case "$arg" in
-	    -t|--test)
-	      test_flag=true
-	      ;;
-	    *)
-	      other_args+=("$arg")
-	      ;;
+	    -t|--test) test_flag=true ;;
+		-h|--help) print_usage;;
+	    *) other_args+=("$arg") ;;
 	  esac
 	done
 
@@ -93,13 +106,16 @@ run() {
 			bash starter.sh "${other_args[@]}"
 
 			# Collect data
-			if [ $# -eq 1 ]; then
+			if [ $# -ge 1 ]; then
 			    bash collect-logs.sh ${1}
 			fi
 			
+			echo "Completed repetition ${REP}/${REPS}"
+			echo "--------------------------------------------------------------"
 		done
+		echo "Completed experiment ${1}"
+		echo "=================================================================="
 	fi
-	exit 0
 }
 
 
@@ -142,27 +158,12 @@ for consensus in "ProofOfAuthority" "ProofOfConnection" "ProofOfWork" "ProofOfSt
 	config "TPS" 30
 	config "REPS" 1
 	config "LENGTH" 500
-	if [ "$consensus" == "ProofOfAuthority" ]; then
-		loopconfig "scs" "module" "ProofOfAuth"
-	else
-		loopconfig "scs" "module" "$consensus"
-	fi
-	loopconfig "scs" "class" "$consensus"
-
-	# config the right state contract
-	match "$consensus" in
-		"ProofOfAuthority")  config "SCNAME" "poa_w" ;;
-		"ProofOfConnection") config "SCNAME" "poc" ;;
-		"ProofOfWork")       config "SCNAME" "poa_w" ;;
-		"ProofOfStake")      config "SCNAME" "pos" ;;
-		*)                    #errormessage
-			echo "Unknown consensus mechanism: $consensus"
-			exit 1
-			;;
-	esac
+	config "CONSENSUS" "$consensus"
+	loopconfig "debug" "main" "False"
+	loopconfig "debug" "loop" "True"
 
 	# run experiment with increasing range of robots
-	for UTIL in $(seq 10 5 30); do 
+	for UTIL in $(seq 10 5 50); do 
 		#name of the configuration
 		CFG=${consensus}_robots_${UTIL}
 		# set number of robots
@@ -244,3 +245,5 @@ done
 # 	wait
 # 	run    "${EXP}/${CFG}"
 # done
+
+exit 0

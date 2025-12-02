@@ -28,7 +28,7 @@ from toychain.src.Node import Node
 from toychain.src.Block import Block, State
 from toychain.src.utils import gen_enode
 
-from toychain.src.consensus.ProofOfAuth import ProofOfAuthority
+from toychain.src.consensus.ProofOfAuthority import ProofOfAuthority
 from toychain.src.Transaction import Transaction
 
 # /* Global Variables */

@@ -25,7 +25,7 @@ from controllers.control_params import params as cp
 from loop_functions.loop_params import params as lp
 
 from toychain.src.utils.helpers import gen_enode
-from toychain.src.consensus.ProofOfAuth import ProofOfAuthority
+from toychain.src.consensus.ProofOfAuthority import ProofOfAuthority
 from toychain.src.consensus.ProofOfWork import ProofOfWork
 from toychain.src.Node import Node
 from toychain.src.Block import Block

@@ -32,7 +32,7 @@ class Contract(StateMixin):
                     print(f"\033[93mMissing required parameter lp['{k}']['{j}'] for initializing smart contract state variables.\033[0m")
                 
             self.all_hellos  = {}
-            self.connectivity = [gen_enode(i+1) for i in range(int(lp['generic']['num_robots']))]
+            self.connectivity = {gen_enode(i+1): 0 for i in range(int(lp['generic']['num_robots'])) }
             self.trans_reward = int(lp['scs']['trans_reward'])
             self.decay = int(lp['scs']['decay'])
             self.connectivity_update = lp['scs']['update']

@@ -31,8 +31,8 @@ params['files'] = dict()
 
 # consensus parameters
 params['consensus'] = dict()
-params['consensus']['module'] = "ProofOfStake"
-params['consensus']['class'] = "ProofOfStake"
+params['consensus']['module'] = str(os.environ["CONSENSUS"])
+params['consensus']['class'] = str(os.environ["CONSENSUS"])
 
 # parameters of the smart contract
 params['scs'] = dict()
@@ -43,5 +43,5 @@ params['scs']['update'] = 'connectivity_Index'
 
 # debug parameters
 params['debug'] = dict()
-params['debug']['main'] = True
+params['debug']['main'] = False
 params['debug']['loop'] = True

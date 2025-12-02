@@ -5,9 +5,7 @@
 import random
 import sys, os
 import warnings
-from collections import Counter
-# for UML
-import objgraph
+from collections import Counter as CCounter
 #-----------------------------
 mainFolder = os.environ['MAINFOLDER']
 experimentFolder = os.environ['EXPERIMENTFOLDER']
@@ -35,7 +33,7 @@ if 'consensus' in lp and 'module' in lp['consensus']:
     ConsensusClass = getattr(module, lp['consensus']['class'])
     BLOCK_PERIOD = getattr(module, "BLOCK_PERIOD")
 else: # default
-    from toychain.src.consensus.ProofOfAuth import ProofOfAuthority as ConsensusClass, BLOCK_PERIOD 
+    from toychain.src.consensus.ProofOfAuthority import ProofOfAuthority as ConsensusClass, BLOCK_PERIOD 
     warnings.showwarning(f"No consensus module specified in loop_function params, defaulting to ProofOfAuthority")   
 # same as choosisng:
 #from toychain.src.consensus.ProofOfConnection import ProofOfConnection , BLOCK_PERIOD
@@ -73,8 +71,11 @@ txList, tripList, submodules = [], [], []
 global clocks, counters, logs, txs
 clocks, counters, logs, txs = dict(), dict(), dict(), dict()
 
-# /* Genesis Block */
-GENESIS = Block(0, 0000, [], 0, 0, 0, 0, nonce = 1, state = State())
+# intalise Genesis Block
+if ConsensusClass.__name__ == 'ProofOfAuthority' or ConsensusClass.__name__ == 'ProofOfWork':
+    GENESIS = Block(0, 0000, [], [gen_enode(i+1) for i in range(int(lp['generic']['num_robots']))], 0, 0, 0, nonce = 1, state = State())
+else:
+    GENESIS = Block(0, 0000, [], 0, 0, 0, 0, nonce = 1, state = State())
 
 # /* Logging Levels for Console and File */
 #######################################################################
@@ -137,9 +138,6 @@ def init():
     w3 = Node(robotID, robotIP, 1233 + int(robotID), ConsensusClass(genesis = GENESIS))
     robot.log.info(f'Consensus Mechanism: {ConsensusClass.__name__}')
     robot.log.info(f'Smart Contract: {State.__name__}')
-    # draw object reference graph of web3 only for robot 1 (for visualization purposes)
-    if robotID == '1':
-        objgraph.show_refs([w3], filename=robotID+'graph.png')
 
     # /* Init an instance of peer for this Pi-Puck */
     me = Peer(robotID, robotIP, w3.enode, w3.key)
@@ -282,8 +280,8 @@ def controlstep():
         robot.variables.set_attribute("mempl_hash", w3.mempool_hash(astype='str'))
         robot.variables.set_attribute("mempl_size", str(len(w3.mempool)))
 
-        erb.setData(last_block.total_difficulty, indices=[1,2])
-        erb.setData(w3.mempool_hash(astype='int'), indices=3)
+        erb.setData(hash_to_int(last_block.total_difficulty, 2), indices=[1,2])
+        erb.setData(hash_to_int(w3.mempool_hash(astype='int'), 1), indices=[3])
 
         #########################################################################################################
         #### State::IDLE
@@ -340,12 +338,17 @@ def destroy():
         if lp['debug']['main']:
             
             for key, value in w3.sc.state.items():
-                print(f"{key}: {value}")
-                
-            counter = Counter(w3.sc.state['connectivity'])
-            for enode, count in counter.items():
-                print(f"{enode_to_id(enode)}: {count}")
-    
+                if key != 'connectivity' and key != 'lottery':
+                    print(f"{key}: {value}")  
+                    
+            if "connectivity" in w3.sc.state:
+                for key, value in w3.sc.state['connectivity'].items():
+                    print(f"{enode_to_id(key)}: {value}")
+                    
+            elif "lottery" in w3.sc.state:
+                for enode, count in CCounter(w3.sc.state['lottery']).items():
+                    print(f"{enode_to_id(enode)}: {count}")
+
         name   = 'block.csv'
         header = ['TELAPSED','TIMESTAMP','BLOCK', 'HASH', 'PHASH', 'DIFF', 'TDIFF', 'SIZE','TXS', 'UNC', 'PENDING', 'QUEUED']
         logs['block'] = Logger(f"{experimentFolder}/logs/{me.id}/{name}", header, ID = me.id)
