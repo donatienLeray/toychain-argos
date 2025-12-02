@@ -14,9 +14,14 @@ PLOTFOLDER="$EXPERIMENTFOLDER/results/plots/experiment_$1/"
 # Create the experiment directory
 mkdir -p $LOGSFOLDER $DATAFOLDER $PLOTFOLDER
 
-# Find the latest repetition in that folder
-last_rep=$(ls $DATAFOLDER -v | tail -1 | sed 's/^0*//')
-new_rep=$(printf "%03d\n" $(($last_rep+1)))
+# if repetitions are used, find the next repetition number
+if [ $REPS -ge 2 ]; then
+  # Find the latest repetition in that folder
+  last_rep=$(ls $DATAFOLDER -v | tail -1 | sed 's/^0*//')
+  new_rep=$(printf "%03d\n" $(($last_rep+1)))
+else
+  new_rep=""
+fi
 
 # Collect experiment configuration into /logs/
 python3 << END
@@ -56,7 +61,8 @@ cp $EXPERIMENTFOLDER/controllers/params.py $LOGSFOLDER/control_params.py
 # done
 
 # Collect data from /logs/ into /results/data
-cp -rp $LOGSFOLDER $DATAFOLDER$new_rep
+cp -rp $LOGSFOLDER* $DATAFOLDER$new_rep
 
 echo "Storing data to: /results/data/experiment_$1/$new_rep"
 
+exit 0
