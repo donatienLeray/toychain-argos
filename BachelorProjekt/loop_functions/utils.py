@@ -68,7 +68,7 @@ def loading_bar(total, current, TPS = None):
     size = shutil.get_terminal_size()
 
     # Get the width (number of columns)
-    length = size.columns - 45
+    length = size.columns - 40
     # loading bar
     progress = int(current / total * length)
     percentage = int(((current * 100) // total))
@@ -76,7 +76,8 @@ def loading_bar(total, current, TPS = None):
     bar_line = f"[{'#' * progress}{percentage}%{'.' * (length - progress+2-percantage_len)}]"
     # current/total
     buffer_len = len(str(total))- len(str(current))
-    eta_line=f" {' ' * buffer_len}{current}/{total}"
+    ct_line=f" {' ' * buffer_len}{current}/{total}"
+    eta_line=""
     # ETA (if TPS is provided)
     if TPS:
         if not hasattr(loading_bar, 'TPS_count'):
@@ -86,8 +87,16 @@ def loading_bar(total, current, TPS = None):
         loading_bar.TPS_count.append(TPS)
         # update the Eta every second
         if time.time() - loading_bar.TPS_time > 0:
-            # calculate the average TPS
-            TPS = sum(loading_bar.TPS_count) // len(loading_bar.TPS_count)
+            # make sure only the last 100 TPS values are used
+            tps_len = len(loading_bar.TPS_count)
+            if tps_len > 100:
+                # remove so only last 100 values are kept
+                del loading_bar.TPS_count[:tps_len-100]
+                # calculate the average TPS
+                TPS = sum(loading_bar.TPS_count) // 100
+            else:
+                # calculate the average TPS
+                TPS = sum(loading_bar.TPS_count) // tps_len
             remaining = (total - current)
             remaining = remaining // TPS
             # format time
@@ -95,13 +104,15 @@ def loading_bar(total, current, TPS = None):
                 remaining = f"{remaining//3600}h {remaining//60%60}m"
             elif remaining >= 60:
                 remaining = f"{remaining//60}m {remaining%60}s"
-            # update the current/total line with ETA
-            else: 
+            elif remaining >= (3600 * 24):
+                remaining = ">24h"
+            else:
                 remaining = f"{math.ceil(remaining)}s"
-            eta_line = f"{current}/{total} ETA: {remaining} remaining      "
-            loading_bar.TPS_time = time.time()
-    # print the loading bar, current/total and ETA
-    print(f"{bar_line} {eta_line}", end='\r')
+            # update the ETA line
+            eta_line = f"ETA: {remaining} {' ' * (9-len(remaining))}"
+            loading_bar.TPS_time = time.time()      
+    # print the current/total, loading bar and ETA
+    print(f"{ct_line} {bar_line} {eta_line}", end='\r')
     # if only 1 
     if total - current < 2:
         print(f"[{'#' * length}100%] {total}/{total} ETA: 0s remaining")

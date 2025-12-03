@@ -111,10 +111,10 @@ run() {
 			fi
 			
 			echo "Completed repetition ${REP}/${REPS}"
-			echo "--------------------------------------------------------------"
+			echo "-------------------------------------------------------------------"
 		done
 		echo "Completed experiment ${1}"
-		echo "=================================================================="
+		echo "=============================================================================================="
 	fi
 }
 
@@ -150,9 +150,10 @@ run() {
 #done
 
 
-EXP=different_consensus_with_increasing_robots
+EXP=different_consensus_with_increasing_agents_2
+
 # run experiment with different consensus mechanisms
-for consensus in "ProofOfAuthority" "ProofOfConnection" "ProofOfWork" "ProofOfStake"; do
+for consensus in "ProofOfStake" "ProofOfWork"; do
 
 	# standard values
 	config "TPS" 30
@@ -163,9 +164,9 @@ for consensus in "ProofOfAuthority" "ProofOfConnection" "ProofOfWork" "ProofOfSt
 	loopconfig "debug" "loop" "True"
 
 	# run experiment with increasing range of robots
-	for UTIL in $(seq 10 5 50); do 
+	for UTIL in $(seq 30 5 50); do 
 		#name of the configuration
-		CFG=${consensus}_robots_${UTIL}
+		CFG=${consensus}_${UTIL}
 		# set number of robots
 		config "NUMROBOTS" "${UTIL}"
 		# run experiment
