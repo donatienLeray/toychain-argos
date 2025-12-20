@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+# Helps to plotters to load and preprocess data from robot or simulation experiments
+# Assumptions:
+# - Data is stored either in current or parent directory as 'data' folder
+# - Data follows the structure data/<EXP>/<CFG>/<REP>/<ID>
+
+import time
+import os
+import pandas as pd
+import glob
+from graphviz import Digraph
+
+def tic():
+    global tstart
+    tstart = time.time()
+def toc():
+    print(time.time()-tstart)  
+
+# Global variables
+global tstart
+EXP, CFG, REP, ID = 'EXP', 'CFG', 'REP', 'ID' 
+EXP_CFG         = [EXP, CFG] 
+EXP_CFG_REP     = EXP_CFG + [REP]
+EXP_CFG_REP_ID  = EXP_CFG_REP + [ID]
+
+# Find 'data' folder in current or parent directory
+for p in ['data', '../data']:
+    datadir = os.path.abspath(os.path.join(os.path.dirname(__file__), p))
+    if os.path.isdir(datadir):
+        break
+else:
+    raise FileNotFoundError("'data' folder not found in current or parent directory")
+
+
+def create_df(experiments, logfile, exclude_patterns = []):
+    df_list = []
+    experiments = [experiments] if isinstance(experiments, str) else experiments
+    
+    for experiment in experiments:
+        
+        # Make sure data folder exists
+        exp_datadir = '%s/%s' % (datadir, experiment)
+        
+        if not os.path.exists(exp_datadir):
+            print("Dataset %s not found" % exp_datadir)
+            continue
+        
+        configs = sorted(glob.glob('%s/%s/*/' % (datadir, experiment)))
+
+        if exclude_patterns:
+            for exclude in exclude_patterns:
+                configs = [config for config in configs if exclude not in config]
+
+        for config in configs:
+            csvfile_list = sorted(glob.glob('%s/*/*/%s.csv' % (config, logfile)))
+            
+            for csvfile in csvfile_list:
+                df = pd.read_csv(csvfile, delim_whitespace=True)
+                df['EXP'] = experiment 
+                df['CFG'] = config.split('/')[-2]
+                df['REP'] = csvfile.split('/')[-3]
+                df_list.append(df)
+        
+    if df_list:
+        full_df = pd.concat(df_list, ignore_index=True)
+        full_df.get_param = get_param_df
+        return full_df
+    else:
+        return None
+
+def get_param_df(df, param_dict, param, alias = None):
+    df = df.groupby(['EXP','CFG','REP']).apply(lambda x: get_param(x, x.name , param_dict, param, alias))
+    return df
+
+def get_param(group, name, param_dict, param, alias):
+    exp = name[0]
+    cfg = name[1]
+    rep = name[2]
+    
+    configfile = '%s/%s/%s/%s/config.py' % (datadir, exp, cfg, rep)
+    exec(open(configfile).read(), globals())
+    param_dict = eval(param_dict)
+    if param in param_dict:
+        if alias:
+            group[alias] = repr(param_dict[param])
+        else:
+            group[param] = param_dict[param]
+    return group
+
+def get_config_dicts(exp,cfg,rep):
+    configfile = '%s/%s/%s/%s/config.py' % (datadir, exp, cfg, rep)
+    with open(configfile) as f:
+        return eval(f.read())
+
+def get_mainchain_df(df, leaf):
+    parentHash = leaf
+    main_list  = [parentHash]
+    main_path = []
+    
+    for (idx, row) in df[::-1].iterrows():
+        if row['HASH'] == parentHash:
+            main_path.append(idx)
+            main_list.append(row['PHASH'])
+            parentHash = row['PHASH']
+        
+    return df.iloc[main_path]
+
+def get_mainchains(df):
+    mainchains = []
+    for name, group in df.groupby(EXP_CFG_REP):
+        group = group.drop_duplicates('HASH').sort_values('BLOCK').reset_index()
+        main_leaf = group[group['TDIFF'] == group['TDIFF'].max()]['HASH'].iloc[0]
+
+        # Iterate from main_leaf to genesis -> mainchain
+        df_mainchain = get_mainchain_df(group, main_leaf)
+        mainchains += list(df_mainchain['HASH'])
+    return mainchains
+
+def trim_chain(df, levels=1):
+    sub_df = df
+    while levels:
+        sub_df = sub_df.query('HASH in PHASH')
+        levels -= 1
+    return sub_df
+
+def create_digraph(df):
+    # Default settings for blockchain viz
+    digraph = Digraph(comment='Blockchain', 
+                      edge_attr={'arrowhead':'none'},
+                      node_attr={'shape': 'record', 'margin': '0', 'fontsize':'9', 'height':'0.35', 'width':'0.35'}, 
+                      graph_attr={'rankdir': 'LR', 'ranksep': '0.1', 'splines':'ortho'})
+    
+
+#     df.apply(lambda row : digraph.node(row['HASH'], str(row['BLOCK'])), axis = 1)
+    digraph.node(df['PHASH'].iloc[0], '<f0> {} | <f1> {}'.format(df['PHASH'].iloc[0][2:6], 'Genesis'))
+    df.apply(lambda row : digraph.node(row['HASH'], '<f0> {} | <f1> {}'.format(row['HASH'][2:6], str(row['BLOCK']))), axis = 1)
+    df.apply(lambda row : digraph.edge(row['PHASH'], row['HASH']), axis = 1)
+    
+    return digraph

@@ -14,14 +14,11 @@ PLOTFOLDER="$EXPERIMENTFOLDER/results/plots/experiment_$1/"
 # Create the experiment directory
 mkdir -p $LOGSFOLDER $DATAFOLDER $PLOTFOLDER
 
-# if repetitions are used, find the next repetition number
-if [ $REPS -ge 2 ]; then
-  # Find the latest repetition in that folder
-  last_rep=$(ls $DATAFOLDER -v | tail -1 | sed 's/^0*//')
-  new_rep=$(printf "%03d\n" $(($last_rep+1)))
-else
-  new_rep=""
-fi
+
+# Find the latest repetition in that folder
+last_rep=$(ls $DATAFOLDER -v | tail -1 | sed 's/^0*//')
+new_rep=$(printf "%03d\n" $(($last_rep+1)))
+
 
 # Collect experiment configuration into /logs/
 python3 << END

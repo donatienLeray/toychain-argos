@@ -7,7 +7,7 @@ export EXPERIMENTFOLDER="$MAINFOLDER/BachelorProjekt"
 # [[ ":$PATH:" != *":$MAINFOLDER/scripts:"* ]] && export PATH=$PATH:$MAINFOLDER/scripts
 
 # [SC]
-export CONSENSUS=ProofOfStake
+export CONSENSUS=ProofOfWork
 case "$CONSENSUS" in
 	"ProofOfAuthority")  export SCNAME="poa_w" ;;
 	"ProofOfConnection") export SCNAME="poc" ;;
@@ -39,7 +39,7 @@ export TPS=30
 export DENSITY="2"
 
 #export NUMROBOTS=$(echo $NUM1+$NUM2 | bc)
-export NUMROBOTS=40
+export NUMROBOTS=50
 export ARENADIM=$(echo "scale=3 ; sqrt($NUMROBOTS/$DENSITY)" | bc)
 export ARENADIMH=$(echo "scale=3 ; $ARENADIM/2" | bc)
 export STARTDIM=$(echo "scale=3 ; $ARENADIM/5" | bc)
