@@ -37,8 +37,8 @@ def create_df(experiments, logfile, exclude_patterns = []):
     for experiment in experiments:
         
         # Make sure data and plot folder exists
-        exp_plotdir = '%s/experiment_%s' % (plotdir, experiment)
-        exp_datadir = '%s/experiment_%s' % (datadir, experiment)
+        exp_plotdir = '%s/%s' % (plotdir, experiment)
+        exp_datadir = '%s/%s' % (datadir, experiment)
         
         if not os.path.exists(exp_datadir):
             print("Dataset %s not found" % exp_datadir)
