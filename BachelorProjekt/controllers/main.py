@@ -61,6 +61,9 @@ else: # default
 # /* Global Variables */
 #######################################################################
 global robot
+# Robot ID (set in init)
+global robotID
+robotID = None
 
 global startFlag
 startFlag = False
@@ -102,7 +105,7 @@ class States(Enum):
 ####################################################################################################################################################################################
 
 def init():
-    global clocks,counters, logs, submodules, me, rw, nav, odo, gps, rb, w3, fsm, rs, erb, rgb
+    global clocks,counters, logs, submodules, me, rw, nav, odo, gps, rb, w3, fsm, rs, erb, rgb, robotID
     robotID = str(int(robot.variables.get_id()[2:])+1)
     robotIP = '127.0.0.1'
     robot.variables.set_attribute("id", str(robotID))
@@ -328,15 +331,21 @@ def reset():
     pass
 
 def destroy():
-    if startFlag:
+    # Ensure we attempt to stop mining and then always try to write/close logs
+    try:
         w3.stop_mining()
+    except Exception as e:
+        robot.log.exception(f"Failed to stop mining for robot {robotID}: {e}")
 
-        txs = w3.get_all_transactions()
-        if len(txs) != len(set([tx.id for tx in txs])):
-            print(f'REPEATED TRANSACTIONS ON CHAIN: #{len(txs)-len(set([tx.id for tx in txs]))}')
+    try:
+        txs_all = w3.get_all_transactions()
+        if len(txs_all) != len(set([tx.id for tx in txs_all])):
+            print(f'REPEATED TRANSACTIONS ON CHAIN: #{len(txs_all)-len(set([tx.id for tx in txs_all]))}')
+    except Exception as e:
+        robot.log.exception(f"Failed to fetch transactions for robot {robotID}: {e}")
 
-        if lp['debug']['main']:
-            
+    if lp['debug']['main']:
+        try:
             for key, value in w3.sc.state.items():
                 if key != 'connectivity' and key != 'lottery':
                     print(f"{key}: {value}")  
@@ -348,40 +357,94 @@ def destroy():
             elif "lottery" in w3.sc.state:
                 for enode, count in CCounter(w3.sc.state['lottery']).items():
                     print(f"{enode_to_id(enode)}: {count}")
+        except Exception as e:
+            robot.log.exception(f"Failed to print debug state for robot {robotID}: {e}")
 
-        name   = 'block.csv'
-        header = ['TELAPSED','TIMESTAMP','BLOCK', 'HASH', 'PHASH', 'DIFF', 'TDIFF', 'SIZE','TXS', 'UNC', 'PENDING', 'QUEUED']
-        logs['block'] = Logger(f"{experimentFolder}/logs/{me.id}/{name}", header, ID = me.id)
+    # Make sure the log directory exists for this robot
+    logdir = f"{experimentFolder}/logs/{robotID}"
+    try:
+        os.makedirs(logdir, exist_ok=True)
+    except Exception as e:
+        robot.log.exception(f"Failed to create log dir {logdir}: {e}")
 
-        name   = 'sc.csv'
-        header = ['TIMESTAMP', 'BLOCK', 'HASH', 'PHASH', 'BALANCE', 'TX_COUNT'] 
-        logs['sc'] = Logger(f"{experimentFolder}/logs/{me.id}/{name}", header, ID = me.id)
+    name   = 'block.csv'
+    header = ['TELAPSED','TIMESTAMP','BLOCK', 'HASH', 'PHASH', 'DIFF', 'TDIFF', 'SIZE','TXS', 'UNC', 'PENDING', 'QUEUED']
+    try:
+        logs['block'] = Logger(f"{logdir}/{name}", header, ID = robotID)
+    except Exception as e:
+        robot.log.exception(f"Failed to open block log for robot {robotID}: {e}")
+        logs['block'] = None
 
-        # Log each block over the operation of the swarm
+    name   = 'sc.csv'
+    header = ['TIMESTAMP', 'BLOCK', 'HASH', 'PHASH', 'BALANCE', 'TX_COUNT'] 
+    try:
+        logs['sc'] = Logger(f"{logdir}/{name}", header, ID = robotID)
+    except Exception as e:
+        robot.log.exception(f"Failed to open sc log for robot {robotID}: {e}")
+        logs['sc'] = None
+
+    # Log each block over the operation of the swarm
+    try:
         for block in w3.chain:
-            logs['block'].log(
-                [w3.custom_timer.time()-block.timestamp, 
-                block.timestamp, 
-                block.height, 
-                block.hash, 
-                block.parent_hash, 
-                block.difficulty,
-                block.total_difficulty, 
-                sys.getsizeof(block) / 1024, 
-                len(block.data), 
-                0
-                ])
-            
-            logs['sc'].log(
-                [block.timestamp, 
-                block.height, 
-                block.hash, 
-                block.parent_hash, 
-                block.state.balances.get(me.id,0),
-                block.state.n
-                ])
-        
-    print('Killed robot '+ me.id)
+            if logs.get('block'):
+                try:
+                    logs['block'].log(
+                        [w3.custom_timer.time()-block.timestamp, 
+                        block.timestamp, 
+                        block.height, 
+                        block.hash, 
+                        block.parent_hash, 
+                        block.difficulty,
+                        block.total_difficulty, 
+                        sys.getsizeof(block) / 1024, 
+                        len(block.data), 
+                        0
+                        ])
+                except Exception as e:
+                    robot.log.exception(f"Failed to write to block log for robot {robotID}: {e}")
+
+            if logs.get('sc'):
+                try:
+                    logs['sc'].log(
+                        [block.timestamp, 
+                        block.height, 
+                        block.hash, 
+                        block.parent_hash, 
+                        block.state.balances.get(robotID,0),
+                        block.state.n
+                        ])
+                except Exception as e:
+                    robot.log.exception(f"Failed to write to sc log for robot {robotID}: {e}")
+    except Exception as e:
+        robot.log.exception(f"Failed while iterating chain for robot {robotID}: {e}")
+    finally:
+        # Ensure logs are flushed and closed
+        try:
+            if logs.get('block'):
+                logs['block'].file.flush()
+                try:
+                    os.fsync(logs['block'].file.fileno())
+                except Exception:
+                    pass
+                logs['block'].close()
+        except Exception as e:
+            robot.log.exception(f"Failed to close block log for robot {robotID}: {e}")
+        try:
+            if logs.get('sc'):
+                logs['sc'].file.flush()
+                try:
+                    os.fsync(logs['sc'].file.fileno())
+                except Exception:
+                    pass
+                logs['sc'].close()
+        except Exception as e:
+            robot.log.exception(f"Failed to close sc log for robot {robotID}: {e}")
+
+    # Print which robot was killed
+    try:
+        print('Killed robot '+ robotID)
+    except Exception:
+        print('Killed robot')
 
 #########################################################################################################################
 #########################################################################################################################

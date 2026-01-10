@@ -14,7 +14,12 @@ params['generic'] = dict()
 params['generic']['time_limit'] = float(os.environ["TIMELIMIT"]) * 60
 params['generic']['arena_size'] = float(os.environ["ARENADIM"])
 params['generic']['num_robots'] = int(os.environ["NUMROBOTS"])
-params['generic']['seed']       = 358 # None for randomgen
+# Seed for deterministic randomness: read from environment variable `SEED` set by the experiment runner.
+# If SEED is empty or invalid, fall back to None (random behavior).
+seed_env = os.environ.get("SEED", "")
+params['generic']['seed'] = int(seed_env) if seed_env != "" else None
+
+
 params['generic']['tps'] = eval(os.environ["TPS"])
 #params['generic']['num_1'] = eval(os.environ["NUM1"])
 #params['generic']['num_2'] = eval(os.environ["NUM2"])

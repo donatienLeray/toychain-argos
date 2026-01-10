@@ -103,8 +103,14 @@ def destroy():
 
 def post_experiment():
     print("Finished from Python!")
-    # When your Python code is done kill argos3
-    os.system('pkill argos3')
+    # Don't kill argos process abruptly; allow ARGoS to shutdown gracefully.
+    # If you really need to force-kill Argos at the end of the experiment, enable it via
+    # environment variable KILL_ARGOS=True
+    if os.environ.get('KILL_ARGOS', 'False') in ['True', 'true', '1']:
+        os.system('pkill argos3')
+    else:
+        # Let ARGoS exit on its own.
+        pass
 
 
 

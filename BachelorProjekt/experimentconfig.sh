@@ -7,7 +7,7 @@ export EXPERIMENTFOLDER="$MAINFOLDER/BachelorProjekt"
 # [[ ":$PATH:" != *":$MAINFOLDER/scripts:"* ]] && export PATH=$PATH:$MAINFOLDER/scripts
 
 # [SC]
-export CONSENSUS=ProofOfWork
+export CONSENSUS=ProofOfConnection
 case "$CONSENSUS" in
 	"ProofOfAuthority")  export SCNAME="poa_w" ;;
 	"ProofOfConnection") export SCNAME="poc" ;;
@@ -35,11 +35,11 @@ export CON1="${EXPERIMENTFOLDER}/controllers/main.py"
 
 export RABRANGE="0.5"
 export WHEELNOISE="0"
-export TPS=30
+export TPS=10
 export DENSITY="2"
 
 #export NUMROBOTS=$(echo $NUM1+$NUM2 | bc)
-export NUMROBOTS=50
+export NUMROBOTS=25
 export ARENADIM=$(echo "scale=3 ; sqrt($NUMROBOTS/$DENSITY)" | bc)
 export ARENADIMH=$(echo "scale=3 ; $ARENADIM/2" | bc)
 export STARTDIM=$(echo "scale=3 ; $ARENADIM/5" | bc)
@@ -49,11 +49,13 @@ export BLOCKPERIOD=1
 export RUN_TKUSER="False"
 
 # [OTHER]
-export SEED=42
+export SEED=420
+# When True, set SEED to the repetition number for each repetition
+export REP_SEED=True
 export TIMELIMIT=100
-export LENGTH=500
+export LENGTH=400
 export SLEEPTIME=5
-export REPS=1
+export REPS=10
 export NOTES="just a test"
 
 

@@ -701,7 +701,7 @@ def reset():
     pass
 
 def destroy():
-    if startFlag:
+    if True:
         # w3.geth.miner.stop()
         w3.stop_mining()
         # w3.display_chain()

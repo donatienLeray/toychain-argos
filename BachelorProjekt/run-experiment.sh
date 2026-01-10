@@ -102,6 +102,14 @@ run() {
 		for REP in $(seq 1 ${REPS}); do
 			echo "Runing experiment ${1}"
 
+# optionally set seed to REP*42 if REP_SEED is enabled
+		if [ "${REP_SEED}" = "True" ] || [ "${REP_SEED}" = "true" ] || [ "${REP_SEED}" = "1" ]; then
+			# compute seed as repetition number multiplied by 42
+			SEEDVAL=$((REP * 42))
+			config "SEED" ${SEEDVAL}
+			echo "Setting SEED=${SEEDVAL}"
+		fi
+
 			# Perform experiment
 			bash starter.sh "${other_args[@]}"
 
@@ -150,21 +158,22 @@ run() {
 #done
 
 
-EXP=different_consensus_with_increasing_agents_2
+EXP=scaling_of_different_consensus
 
 # run experiment with different consensus mechanisms
-for consensus in "ProofOfStake" "ProofOfWork"; do
+for consensus in "ProofOfStake" "ProofOfWork" "ProofOfAuthority" "ProofOfConnection"; do
 
 	# standard values
-	config "TPS" 30
-	config "REPS" 1
-	config "LENGTH" 500
+	config "TPS" 10
+	config "REPS" 10
+	config "LENGTH" 400
+	config "REP_SEED" "True"
 	config "CONSENSUS" "$consensus"
 	loopconfig "debug" "main" "False"
 	loopconfig "debug" "loop" "True"
 
 	# run experiment with increasing range of robots
-	for UTIL in $(seq 30 5 50); do 
+	for UTIL in $(seq 5 5 25); do 
 		#name of the configuration
 		CFG=${consensus}_${UTIL}
 		# set number of robots
