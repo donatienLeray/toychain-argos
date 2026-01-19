@@ -995,3 +995,143 @@ def show_tprod_histogram():
             print(f'Max: {combined_tprod.max():.2f}s')
 
     create_data_picker_with_callback('Show Histogram', _tprod_histogram_callback, 'primary')
+
+
+def show_block_propagation_boxplot():
+    """Display boxplot of block propagation times across different consensus protocols and number of agents."""
+    import numpy as np
+    import matplotlib.pyplot as plt
+    
+    if 'loaded_data' not in globals() or not globals().get('loaded_data'):
+        print("No `loaded_data` available. Use the picker and click Load data first.")
+        return
+    
+    loaded_data = globals().get('loaded_data', {})
+    exp_choices = sorted(loaded_data.keys())
+    
+    # Parse experiment keys to extract consensus and agent count
+    # Expected format: experiment/consensus_agentcount or consensus_agentcount
+    data_for_plot = []
+    
+    for exp_key in exp_choices:
+        # Extract consensus and agent count from exp_key
+        if '/' in exp_key:
+            config_name = exp_key.split('/')[-1]
+        else:
+            config_name = exp_key
+        
+        # Parse config_name (e.g., "ProofOfAuthority_10")
+        if '_' not in config_name or not config_name.split('_')[-1].isdigit():
+            print(f"Skipping {exp_key}: doesn't match consensus_number pattern")
+            continue
+        
+        consensus = '_'.join(config_name.split('_')[:-1])
+        num_agents = int(config_name.split('_')[-1])
+        
+        # Calculate propagation time for each block in this configuration
+        for rep_name, robots_dict in loaded_data.get(exp_key, {}).items():
+            # For each unique block (by HASH), find the time difference between
+            # first reception and last reception across all robots
+            
+            block_times = {}  # hash -> list of (robot, timestamp)
+            
+            for robot_id, df in robots_dict.items():
+                if not isinstance(df, pd.DataFrame):
+                    continue
+                if 'HASH' not in df.columns or 'TIMESTAMP' not in df.columns:
+                    continue
+                
+                for _, row in df.iterrows():
+                    block_hash = row['HASH']
+                    timestamp = row['TIMESTAMP']
+                    
+                    if block_hash not in block_times:
+                        block_times[block_hash] = []
+                    block_times[block_hash].append((robot_id, timestamp))
+            
+            # Calculate propagation time for each block
+            for block_hash, times in block_times.items():
+                if len(times) < 2:  # Need at least 2 robots to calculate propagation
+                    continue
+                
+                timestamps = [t for _, t in times]
+                propagation_time = max(timestamps) - min(timestamps)
+                
+                data_for_plot.append({
+                    'consensus': consensus,
+                    'num_agents': num_agents,
+                    'propagation_time': propagation_time,
+                    'rep': rep_name,
+                    'block_hash': block_hash
+                })
+    
+    if not data_for_plot:
+        print("No block propagation data found. Make sure data contains HASH and TIMESTAMP columns.")
+        return
+    
+    # Convert to DataFrame
+    plot_df = pd.DataFrame(data_for_plot)
+    
+    # Create boxplot
+    fig, ax = plt.subplots(1, 1, figsize=(14, 7))
+    
+    # Get unique consensus types and assign colors
+    consensus_types = sorted(plot_df['consensus'].unique())
+    colors = plt.cm.tab10(np.linspace(0, 1, len(consensus_types)))
+    color_map = dict(zip(consensus_types, colors))
+    
+    # Get unique agent counts for x-axis positions
+    agent_counts = sorted(plot_df['num_agents'].unique())
+    
+    # Prepare data for boxplot
+    positions = []
+    box_data = []
+    box_colors = []
+    labels = []
+    
+    width = 0.8 / len(consensus_types)  # Width of each box
+    
+    for i, num_agents in enumerate(agent_counts):
+        for j, consensus in enumerate(consensus_types):
+            # Filter data for this combination
+            subset = plot_df[(plot_df['num_agents'] == num_agents) & 
+                           (plot_df['consensus'] == consensus)]
+            
+            if len(subset) > 0:
+                pos = i + (j - len(consensus_types)/2 + 0.5) * width
+                positions.append(pos)
+                box_data.append(subset['propagation_time'].values)
+                box_colors.append(color_map[consensus])
+                if i == 0:  # Only add to labels for first group
+                    labels.append(consensus)
+    
+    # Create boxplot
+    bp = ax.boxplot(box_data, positions=positions, widths=width*0.8, 
+                    patch_artist=True, showfliers=False)
+    
+    # Color the boxes
+    for patch, color in zip(bp['boxes'], box_colors):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.7)
+    
+    # Set x-axis
+    ax.set_xticks(range(len(agent_counts)))
+    ax.set_xticklabels(agent_counts)
+    ax.set_xlabel('Number of Agents')
+    ax.set_ylabel('Block Propagation Time [s]')
+    ax.set_title('Block Propagation Time by Consensus Protocol and Number of Agents')
+    
+    # Add legend
+    legend_handles = [plt.Rectangle((0,0),1,1, facecolor=color_map[c], alpha=0.7) 
+                     for c in consensus_types]
+    ax.legend(legend_handles, consensus_types, loc='upper left', title='Consensus Protocol')
+    
+    ax.grid(axis='y', linestyle='--', alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # Print summary statistics
+    print("\nSummary Statistics:")
+    summary = plot_df.groupby(['consensus', 'num_agents'])['propagation_time'].agg(['count', 'mean', 'median', 'std', 'min', 'max'])
+    print(summary.to_string())
