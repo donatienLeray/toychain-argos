@@ -158,10 +158,10 @@ run() {
 #done
 
 
-EXP=scaling_of_different_consensus
+EXP=different_consensus_2_POA
 
 # run experiment with different consensus mechanisms
-for consensus in "ProofOfStake" "ProofOfWork" "ProofOfAuthority" "ProofOfConnection"; do
+for consensus in "ProofOfAuthority"; do
 
 	# standard values
 	config "TPS" 10

@@ -512,6 +512,7 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
         
         try:
             loaded = {}
+            block_production_counts = {}
             # Record the chosen csv basename per experiment so other helpers can know which was chosen
             selected_csv_map = {}
 
@@ -544,6 +545,7 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
                 for run, keys in sorted(run_to_keys.items(), key=lambda kv: kv[0].name):
                     for base_key in sorted(keys):
                         run_dict = loaded.setdefault(base_key, {}).setdefault(run.name, {})
+                        count_dict = block_production_counts.setdefault(base_key, {}).setdefault(run.name, {})
                         # robot dirs inside run — numeric names starting at 1; exclude '0'
                         robots = sorted([d for d in run.iterdir() if d.is_dir() and d.name.isdigit() and int(d.name) != 0], key=lambda p: int(p.name))
                         if not robots:
@@ -555,17 +557,39 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
                             if csv_path.exists():
                                 # CSV files are space-separated, not comma-separated
                                 df = pd.read_csv(csv_path, sep=r'\s+')
+                                
+                                # Fix common column name typos
+                                if 'TELEAPSED' in df.columns:
+                                    df.rename(columns={'TELEAPSED': 'TELAPSED'}, inplace=True)
+                                
                                 # Store the DataFrame directly (no csv_basename key level)
                                 run_dict[robot_key] = df
+                            
+                            # Load block production count from monitor.log
+                            log_path = robot / 'monitor.log'
+                            if log_path.exists():
+                                try:
+                                    with open(log_path, 'r') as f:
+                                        count = sum(1 for line in f if 'Block produced' in line)
+                                    count_dict[robot_key] = count
+                                except Exception:
+                                    count_dict[robot_key] = 0
+                            else:
+                                count_dict[robot_key] = 0
 
             # Save global variables
             globals()['loaded_data'] = loaded
+            globals()['block_production_counts'] = block_production_counts
             globals()['selected_csv_map'] = selected_csv_map
             
             out.clear_output()
             with out:
                 if loaded:
-                    print("Data loaded successfully!")
+                    total_robots = sum(len(robots) for exp_data in loaded.values() for robots in exp_data.values())
+                    total_blocks = sum(count for exp_data in block_production_counts.values() for robots in exp_data.values() for count in robots.values())
+                    print(f"✓ Data loaded successfully!")
+                    print(f"  - {total_robots} robot datasets")
+                    print(f"  - {total_blocks:,} total blocks produced")
                 else:
                     print("❌ Error: No data was loaded. Please check your experiment selection and try again.")
         
@@ -820,8 +844,196 @@ def show_loaded_preview():
         ]))
 
 
-def show_telapsed_histogram():
-    """Display histogram of TELAPSED (time elapsed between blocks) with experiment, rep, and robot filters."""
+def show_block_production_summary():
+    """Display summary of block production counts per robot."""
+    if 'block_production_counts' not in globals() or not globals().get('block_production_counts'):
+        print("No block production data available. Load data first using the CSV picker.")
+        return
+    
+    counts = globals().get('block_production_counts', {})
+    
+    # Build summary table
+    rows = []
+    for exp_key in sorted(counts.keys()):
+        for rep in sorted(counts[exp_key].keys()):
+            for robot, count in sorted(counts[exp_key][rep].items()):
+                rows.append({
+                    'Experiment': exp_key,
+                    'Rep': rep,
+                    'Robot': robot,
+                    'Blocks Produced': count
+                })
+    
+    if not rows:
+        print("No block production data found.")
+        return
+    
+    df = pd.DataFrame(rows)
+    
+    print(f"Block Production Summary ({len(rows)} robots)")
+    print("=" * 60)
+    display(df)
+    
+    # Summary statistics
+    print("\n" + "=" * 60)
+    print("Statistics by Experiment:")
+    print("=" * 60)
+    summary = df.groupby('Experiment')['Blocks Produced'].agg(['count', 'sum', 'mean', 'median', 'std', 'min', 'max'])
+    summary.columns = ['Robots', 'Total', 'Mean', 'Median', 'Std', 'Min', 'Max']
+    display(summary)
+    
+    # Overall totals
+    print("\n" + "=" * 60)
+    print(f"Overall Total: {df['Blocks Produced'].sum():,} blocks produced")
+    print(f"Average per robot: {df['Blocks Produced'].mean():.1f} blocks")
+    print("=" * 60)
+
+
+def show_block_production_picker():
+    """Interactive picker to show block production counts filtered by experiment, rep, and robot.
+    Reuses the generic data picker used in previews and histograms.
+    """
+    if 'block_production_counts' not in globals() or not globals().get('block_production_counts'):
+        print("No block production data available. Load data first using the CSV picker.")
+        return
+
+    counts = globals().get('block_production_counts', {})
+
+    def _picker_callback(exp, rep_sel, robot_sel, loaded_data, preview_out):
+        # exp is a key from loaded_data; counts uses same keys
+        with preview_out:
+            preview_out.clear_output()
+            if exp not in counts:
+                print(f"No block production data found for {exp}.")
+                return
+
+            rows = []
+            reps_dict = counts.get(exp, {})
+
+            # Determine reps to include
+            rep_keys = sorted(reps_dict.keys())
+            if rep_sel != 'All':
+                rep_keys = [rep_sel] if rep_sel in reps_dict else []
+
+            # Build rows
+            for rep in rep_keys:
+                robots_dict = reps_dict.get(rep, {})
+                # Determine robots to include
+                robot_items = sorted(robots_dict.items())
+                if robot_sel != 'All':
+                    robot_items = [(r, c) for (r, c) in robot_items if str(r) == str(robot_sel)]
+
+                for robot, count in robot_items:
+                    rows.append({
+                        'Experiment': exp,
+                        'Rep': rep,
+                        'Robot': robot,
+                        'Blocks Produced': count,
+                    })
+
+            if not rows:
+                print("No data for selected filters.")
+                return
+
+            df = pd.DataFrame(rows)
+            # Display table
+            display(df.sort_values(['Rep', 'Robot']).reset_index(drop=True))
+
+            # Per-rep summary
+            print("\nPer-Rep Summary:")
+            rep_sum = df.groupby('Rep')['Blocks Produced'].agg(['count', 'sum', 'mean', 'median', 'std', 'min', 'max'])
+            rep_sum.columns = ['Robots', 'Total', 'Mean', 'Median', 'Std', 'Min', 'Max']
+            display(rep_sum)
+
+            # Overall
+            print("\nOverall:")
+            total = int(df['Blocks Produced'].sum())
+            avg = float(df['Blocks Produced'].mean())
+            print(f"Total blocks produced: {total}")
+            print(f"Average per robot: {avg:.1f}")
+
+    # Reuse the shared picker UI
+    create_data_picker_with_callback('Show Block Counts', _picker_callback, button_style='primary')
+
+
+def get_block_production_count(experiment=None, rep=None, robot=None):
+    """Get block production count(s) from loaded data.
+    
+    Args:
+        experiment: Experiment key (e.g., 'ProofOfWork_5'). If None, returns all.
+        rep: Repetition/run number (e.g., '1'). If None, returns all for experiment.
+        robot: Robot number (e.g., 2). If None, returns all for rep.
+    
+    Returns:
+        int, dict, or None depending on specificity of query
+    
+    Examples:
+        get_block_production_count('ProofOfWork_5', '1', 2)  # Returns count for robot 2
+        get_block_production_count('ProofOfWork_5', '1')     # Returns dict of all robots in rep 1
+        get_block_production_count('ProofOfWork_5')          # Returns dict of all reps
+        get_block_production_count()                         # Returns full dict
+    """
+    if 'block_production_counts' not in globals():
+        print("No block production data available. Load data first.")
+        return None
+    
+    counts = globals().get('block_production_counts', {})
+    
+    if experiment is None:
+        return counts
+    
+    if experiment not in counts:
+        print(f"Experiment '{experiment}' not found. Available: {list(counts.keys())}")
+        return None
+    
+    if rep is None:
+        return counts[experiment]
+    
+    rep_str = str(rep)
+    if rep_str not in counts[experiment]:
+        print(f"Rep '{rep}' not found in {experiment}. Available: {list(counts[experiment].keys())}")
+        return None
+    
+    if robot is None:
+        return counts[experiment][rep_str]
+    
+    if robot not in counts[experiment][rep_str]:
+        print(f"Robot {robot} not found in {experiment}/{rep}. Available: {list(counts[experiment][rep_str].keys())}")
+        return None
+    
+    return counts[experiment][rep_str][robot]
+    
+    if split_config_mode:
+        consensus_drop.observe(lambda *_: _update_rep_robot_cols(), names='value')
+        agents_drop.observe(lambda *_: _update_rep_robot_cols(), names='value')
+        _update_rep_robot_cols()
+        display(widgets.VBox([
+            widgets.HBox([consensus_drop, agents_drop, rep_drop, robot_drop, col_drop, btn]), 
+            preview_out
+        ]))
+    else:
+        exp_drop.observe(lambda *_: _update_rep_robot_cols(), names='value')
+        _update_rep_robot_cols()
+        display(widgets.VBox([
+            widgets.HBox([exp_drop, rep_drop, robot_drop, col_drop, btn]), 
+            preview_out
+        ]))
+
+
+def show_histogram(column_name, *dedup_keys, bins=100, xlabel=None, ylabel='Cumulative Percentage', title=None):
+    """Display histogram of specified column with experiment, rep, and robot filters.
+    
+    Args:
+        column_name: Column to display histogram for (e.g., 'TELAPSED')
+        *dedup_keys: Optional keys for deduplication before processing.
+                    If provided, deduplicates by these keys, sorts by column_name,
+                    and calculates differences (useful for time intervals).
+                    Example: show_histogram('TIMESTAMP', 'HASH') for TPROD calculation
+        bins: Number of bins for the histogram (default: 100)
+        xlabel: Label for x-axis (default: '{column_name} [s]')
+        ylabel: Label for y-axis (default: 'Cumulative Percentage')
+        title: Title for the plot (default: '{column_name} Distribution - {exp}')
+    """
     import numpy as np
     import matplotlib.pyplot as plt
     from matplotlib import ticker
@@ -830,6 +1042,10 @@ def show_telapsed_histogram():
         with preview_out:
             preview_out.clear_output()
             dfs = []
+            
+            # Determine required columns
+            required_cols = set([column_name] + list(dedup_keys))
+            
             for rep, robots in loaded_data.get(exp, {}).items():
                 if rep_sel != 'All' and rep != rep_sel:
                     continue
@@ -837,123 +1053,45 @@ def show_telapsed_histogram():
                     if robot_sel != 'All' and str(robot) != robot_sel:
                         continue
                     if isinstance(df, pd.DataFrame):
-                        # Check if TELAPSED column exists
-                        if 'TELAPSED' not in df.columns:
-                            print(f'Warning: TELAPSED column not found in {exp}/{rep}/robot_{robot}')
+                        # Check if required columns exist
+                        missing = required_cols - set(df.columns)
+                        if missing:
+                            print(f'Warning: Missing columns {missing} in {exp}/{rep}/robot_{robot}')
                             continue
                         
-                        dfs.append(df[['TELAPSED']].copy())
-
-            if not dfs:
-                print(f'No TELAPSED data found for {exp} with selected filters')
-                return
-
-            combined = pd.concat(dfs, ignore_index=True)
-            
-            # Histogram parameters - fixed 100 bins
-            bins = 100
-            
-            # Create figure
-            fig, ax = plt.subplots(1, 1, figsize=(10, 5))
-            
-            # Create histogram
-            hist, bins_edges = np.histogram(combined['TELAPSED'], bins=bins)
-            
-            # Avoid division by zero warning - normalize safely
-            hist_sum = hist.sum()
-            if hist_sum > 0:
-                cumsum_normalized = np.cumsum(hist.astype(np.float32)) / hist_sum
-            else:
-                cumsum_normalized = np.zeros_like(hist, dtype=np.float32)
-            
-            ax.bar(bins_edges[:-1] + (bins_edges[1] - bins_edges[0]) / 2, 
-                   cumsum_normalized, 
-                   width=(bins_edges[1] - bins_edges[0]), 
-                   color='green', 
-                   alpha=0.6,
-                   zorder=3)
-            
-            # Edit plot
-            ax.grid(axis='x', linestyle='--', color='k', zorder=1)
-            n_blocks = len(combined)
-            data_max = combined['TELAPSED'].max()
-            ax.text(data_max * 0.95, 0.2, f'n={n_blocks:,} blocks', ha='right', zorder=4)
-            t = ax.text(data_max * 0.95, 0.2, f'n={n_blocks:,} blocks', ha='right', color='white', zorder=2)
-            t.set_bbox(dict(facecolor='white', edgecolor='white'))
-            ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=1, decimals=0))
-            ax.set_ylim(ymin=0, ymax=1)
-            ax.set_xlim(xmin=bins_edges[0], xmax=bins_edges[-1])
-            ax.set_xlabel('Block Reception Delay [s]')
-            ax.set_ylabel('Cumulative Percentage')
-            ax.set_title(f'Time Elapsed Between Blocks - {exp}')
-            
-            plt.tight_layout()
-            plt.show()
-            
-            # Print summary statistics
-            print(f'\nStatistics for {n_blocks:,} blocks:')
-            print(f'Mean: {combined["TELAPSED"].mean():.2f}s')
-            print(f'Median: {combined["TELAPSED"].median():.2f}s')
-            print(f'Std: {combined["TELAPSED"].std():.2f}s')
-            print(f'Min: {combined["TELAPSED"].min():.2f}s')
-            print(f'Max: {combined["TELAPSED"].max():.2f}s')
-
-    create_data_picker_with_callback('Show Histogram', _histogram_callback, 'primary')
-
-
-def show_tprod_histogram():
-    """Display histogram of TPROD (time between block productions) with experiment, rep, and robot filters."""
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from matplotlib import ticker
-    
-    def _tprod_histogram_callback(exp, rep_sel, robot_sel, loaded_data, preview_out):
-        with preview_out:
-            preview_out.clear_output()
-            dfs = []
-            for rep, robots in loaded_data.get(exp, {}).items():
-                if rep_sel != 'All' and rep != rep_sel:
-                    continue
-                for robot, df in robots.items():
-                    if robot_sel != 'All' and str(robot) != robot_sel:
-                        continue
-                    if isinstance(df, pd.DataFrame):
-                        # Check if TIMESTAMP and HASH columns exist
-                        if 'TIMESTAMP' not in df.columns or 'HASH' not in df.columns:
-                            print(f'Warning: TIMESTAMP or HASH column not found in {exp}/{rep}/robot_{robot}')
-                            continue
-                        
-                        df_copy = df[['TIMESTAMP', 'HASH']].copy()
+                        df_copy = df[list(required_cols)].copy()
                         df_copy['REP'] = rep
                         df_copy['ROBOT'] = robot
                         dfs.append(df_copy)
 
             if not dfs:
-                print(f'No TIMESTAMP data found for {exp} with selected filters')
+                print(f'No data found for {column_name} in {exp} with selected filters')
                 return
 
             combined = pd.concat(dfs, ignore_index=True)
             
-            # Process the dataframe: drop duplicates, sort by timestamp, calculate diff
-            combined = combined.drop_duplicates('HASH')
-            combined = combined.sort_values('TIMESTAMP')
-            combined['TPROD'] = combined.groupby(['REP'])['TIMESTAMP'].diff()
+            # Process data: apply deduplication and diff if keys provided
+            if dedup_keys:
+                combined = combined.drop_duplicates(list(dedup_keys))
+                combined = combined.sort_values(column_name)
+                # Calculate differences grouped by REP
+                combined[column_name] = combined.groupby(['REP'])[column_name].diff()
+                # Remove NaN values from diff (first row of each group)
+                data_to_plot = combined[column_name].dropna()
+                desc_suffix = 'unique blocks'
+            else:
+                data_to_plot = combined[column_name]
+                desc_suffix = 'blocks'
             
-            # Remove NaN values from diff (first row of each group)
-            combined_tprod = combined['TPROD'].dropna()
-            
-            if len(combined_tprod) == 0:
-                print(f'No valid TPROD data found for {exp} with selected filters')
+            if len(data_to_plot) == 0:
+                print(f'No valid data found for {column_name} in {exp} with selected filters')
                 return
-            
-            # Histogram parameters - fixed 100 bins
-            bins = 100
             
             # Create figure
             fig, ax = plt.subplots(1, 1, figsize=(10, 5))
             
             # Create histogram
-            hist, bins_edges = np.histogram(combined_tprod, bins=bins)
+            hist, bins_edges = np.histogram(data_to_plot, bins=bins)
             
             # Avoid division by zero warning - normalize safely
             hist_sum = hist.sum()
@@ -971,36 +1109,162 @@ def show_tprod_histogram():
             
             # Edit plot
             ax.grid(axis='x', linestyle='--', color='k', zorder=1)
-            n_blocks = len(combined_tprod)
-            data_max = combined_tprod.max()
-            ax.text(data_max * 0.95, 0.2, f'n={n_blocks:,} unique blocks', ha='right', zorder=4)
-            t = ax.text(data_max * 0.95, 0.2, f'n={n_blocks:,} unique blocks', ha='right', color='white', zorder=2)
+            n_samples = len(data_to_plot)
+            data_max = data_to_plot.max()
+            ax.text(data_max * 0.95, 0.2, f'n={n_samples:,} {desc_suffix}', ha='right', zorder=4)
+            t = ax.text(data_max * 0.95, 0.2, f'n={n_samples:,} {desc_suffix}', ha='right', color='white', zorder=2)
             t.set_bbox(dict(facecolor='white', edgecolor='white'))
             ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=1, decimals=0))
             ax.set_ylim(ymin=0, ymax=1)
             ax.set_xlim(xmin=bins_edges[0], xmax=bins_edges[-1])
-            ax.set_xlabel('Block Production Interval [s]')
-            ax.set_ylabel('Cumulative Percentage')
-            ax.set_title(f'Time Elapsed Between Block Productions - {exp}')
+            
+            # Set labels with defaults if not provided
+            ax.set_xlabel(xlabel if xlabel is not None else f'{column_name} [s]')
+            ax.set_ylabel(ylabel)
+            ax.set_title(title if title is not None else f'{column_name} Distribution - {exp}')
+
             
             plt.tight_layout()
             plt.show()
             
             # Print summary statistics
-            print(f'\nStatistics for {n_blocks:,} unique blocks:')
-            print(f'Mean: {combined_tprod.mean():.2f}s')
-            print(f'Median: {combined_tprod.median():.2f}s')
-            print(f'Std: {combined_tprod.std():.2f}s')
-            print(f'Min: {combined_tprod.min():.2f}s')
-            print(f'Max: {combined_tprod.max():.2f}s')
+            print(f'\nStatistics for {n_samples:,} {desc_suffix}:')
+            print(f'Mean: {data_to_plot.mean():.2f}s')
+            print(f'Median: {data_to_plot.median():.2f}s')
+            print(f'Std: {data_to_plot.std():.2f}s')
+            print(f'Min: {data_to_plot.min():.2f}s')
+            print(f'Max: {data_to_plot.max():.2f}s')
 
-    create_data_picker_with_callback('Show Histogram', _tprod_histogram_callback, 'primary')
+    create_data_picker_with_callback('Show Histogram', _histogram_callback, 'primary')
+
+
+def _create_consensus_boxplot_visualization(
+    plot_df, 
+    metric_column, 
+    ylabel, 
+    plot_title, 
+    comparison_title,
+    ylim=None,
+    no_data_message="No data found."
+):
+    """
+    Generic visualization function for consensus/agent metrics with 4 boxplots + 1 comparison chart.
+    
+    Args:
+        plot_df: DataFrame with columns 'consensus', 'num_agents', and metric_column
+        metric_column: Name of the column containing metric values
+        ylabel: Label for y-axis (e.g., 'Propagation Time [s]' or 'Efficiency (%)')
+        plot_title: Overall figure title (e.g., 'Block Propagation Time (BPT)')
+        comparison_title: Title for the comparison line chart
+        ylim: Optional tuple (min, max) to set y-axis limits on boxplots
+        no_data_message: Message to display if no data
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    
+    if plot_df.empty:
+        print(no_data_message)
+        return
+    
+    # Get unique consensus types and assign colors
+    consensus_types = sorted(plot_df['consensus'].unique())
+    colors = plt.cm.tab10(np.linspace(0, 1, len(consensus_types)))
+    color_map = dict(zip(consensus_types, colors))
+    
+    # Get unique agent counts for x-axis positions
+    agent_counts = sorted(plot_df['num_agents'].unique())
+    
+    # Create figure with 5 subplots: 4 boxplots (2x2) + 1 line chart
+    fig = plt.figure(figsize=(16, 12))
+    gs = fig.add_gridspec(3, 2, hspace=0.3, wspace=0.3)
+    
+    # Create 4 boxplot subplots (one per consensus)
+    for idx, consensus in enumerate(consensus_types):
+        row = idx // 2
+        col = idx % 2
+        ax = fig.add_subplot(gs[row, col])
+        
+        # Prepare data for this consensus
+        positions = []
+        box_data = []
+        
+        for i, n_agents in enumerate(agent_counts):
+            subset = plot_df[(plot_df['num_agents'] == n_agents) & (plot_df['consensus'] == consensus)]
+            if not subset.empty:
+                positions.append(i)
+                box_data.append(subset[metric_column].values)
+        
+        if box_data:
+            bp = ax.boxplot(box_data, positions=positions, widths=0.6, 
+                           patch_artist=True, showfliers=False)
+            
+            # Color all boxes with consensus color
+            for patch in bp['boxes']:
+                patch.set_facecolor(color_map[consensus])
+                patch.set_alpha(0.7)
+            
+            ax.set_xticks(range(len(agent_counts)))
+            ax.set_xticklabels(agent_counts)
+            ax.set_xlabel('Number of Agents')
+            ax.set_ylabel(ylabel)
+            ax.set_title(f'{consensus}', fontweight='bold', fontsize=11)
+            ax.grid(axis='y', linestyle='--', alpha=0.3)
+            
+            # Set y-limits if provided
+            if ylim:
+                ax.set_ylim(ylim)
+    
+    # Create line chart comparing all consensus algorithms (larger, spanning 2 columns)
+    ax_line = fig.add_subplot(gs[2, :])
+    
+    for consensus in consensus_types:
+        trend_agents = []
+        trend_means = []
+        trend_stds = []
+        
+        for n_agents in agent_counts:
+            subset = plot_df[(plot_df['num_agents'] == n_agents) & (plot_df['consensus'] == consensus)]
+            if not subset.empty:
+                mean_metric = subset[metric_column].mean()
+                std_metric = subset[metric_column].std()
+                trend_agents.append(n_agents)
+                trend_means.append(mean_metric)
+                trend_stds.append(std_metric if not pd.isna(std_metric) else 0)
+        
+        # Draw line with error bands
+        if len(trend_agents) >= 1:
+            ax_line.plot(trend_agents, trend_means, color=color_map[consensus], 
+                        linewidth=3, marker='o', markersize=8, label=consensus)
+            
+            # Add confidence bands (mean ± std)
+            if len(trend_agents) >= 1:
+                means_array = np.array(trend_means)
+                stds_array = np.array(trend_stds)
+                ax_line.fill_between(trend_agents, means_array - stds_array, 
+                                    means_array + stds_array, 
+                                    color=color_map[consensus], alpha=0.2)
+    
+    ax_line.set_xlabel('Number of Agents', fontsize=12, fontweight='bold')
+    ax_line.set_ylabel(ylabel, fontsize=12, fontweight='bold')
+    ax_line.set_title(comparison_title, fontsize=13, fontweight='bold')
+    ax_line.legend(loc='best', fontsize=10)
+    ax_line.grid(True, linestyle='--', alpha=0.3)
+    
+    # Overall title
+    fig.suptitle(plot_title, fontsize=14, fontweight='bold', y=0.995)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # Print summary statistics
+    print(f"\nSummary Statistics ({ylabel}):")
+    summary = plot_df.groupby(['consensus', 'num_agents'])[metric_column].agg(['count', 'mean', 'median', 'std', 'min', 'max'])
+    print(summary.to_string())
 
 
 def show_block_propagation_boxplot():
-    """Display boxplot of block propagation times across different consensus protocols and number of agents."""
-    import numpy as np
-    import matplotlib.pyplot as plt
+    """Display boxplot of block propagation times across different consensus protocols and number of agents.
+    Shows 5 plots: 4 per-consensus boxplots (2x2 grid) + 1 comparison line chart."""
     
     if 'loaded_data' not in globals() or not globals().get('loaded_data'):
         print("No `loaded_data` available. Use the picker and click Load data first.")
@@ -1038,12 +1302,12 @@ def show_block_propagation_boxplot():
             for robot_id, df in robots_dict.items():
                 if not isinstance(df, pd.DataFrame):
                     continue
-                if 'HASH' not in df.columns or 'TIMESTAMP' not in df.columns:
+                if 'HASH' not in df.columns or 'RECEPTION' not in df.columns:
                     continue
                 
                 for _, row in df.iterrows():
                     block_hash = row['HASH']
-                    timestamp = row['TIMESTAMP']
+                    timestamp = row['RECEPTION']
                     
                     if block_hash not in block_times:
                         block_times[block_hash] = []
@@ -1065,73 +1329,86 @@ def show_block_propagation_boxplot():
                     'block_hash': block_hash
                 })
     
-    if not data_for_plot:
-        print("No block propagation data found. Make sure data contains HASH and TIMESTAMP columns.")
-        return
-    
     # Convert to DataFrame
     plot_df = pd.DataFrame(data_for_plot)
     
-    # Create boxplot
-    fig, ax = plt.subplots(1, 1, figsize=(14, 7))
-    
-    # Get unique consensus types and assign colors
-    consensus_types = sorted(plot_df['consensus'].unique())
-    colors = plt.cm.tab10(np.linspace(0, 1, len(consensus_types)))
-    color_map = dict(zip(consensus_types, colors))
-    
-    # Get unique agent counts for x-axis positions
-    agent_counts = sorted(plot_df['num_agents'].unique())
-    
-    # Prepare data for boxplot
-    positions = []
-    box_data = []
-    box_colors = []
-    labels = []
-    
-    width = 0.8 / len(consensus_types)  # Width of each box
-    
-    for i, num_agents in enumerate(agent_counts):
-        for j, consensus in enumerate(consensus_types):
-            # Filter data for this combination
-            subset = plot_df[(plot_df['num_agents'] == num_agents) & 
-                           (plot_df['consensus'] == consensus)]
+    # Use generic visualization function
+    _create_consensus_boxplot_visualization(
+        plot_df=plot_df,
+        metric_column='propagation_time',
+        ylabel='Propagation Time [s]',
+        plot_title='Block Propagation Time (BPT)',
+        comparison_title='Propagation Time Comparison Across Consensus Algorithms',
+        ylim=None,
+        no_data_message="No block propagation data found. Make sure data contains HASH and RECEPTION columns."
+    )
+
+
+def show_efficiency_boxplot():
+    """Boxplot of chain efficiency (max height / total produced blocks) by consensus and number of agents.
+    Shows 5 plots: 4 per-consensus boxplots (2x2 grid) + 1 comparison line chart."""
+
+    if 'loaded_data' not in globals() or not globals().get('loaded_data'):
+        print("No `loaded_data` available. Use the picker and click Load data first.")
+        return
+
+    loaded_data = globals().get('loaded_data', {})
+    exp_choices = sorted(loaded_data.keys())
+
+    rows = []  # each row: consensus, num_agents, rep, efficiency_pct
+
+    for exp_key in exp_choices:
+        cfg = exp_key.split('/')[-1] if '/' in exp_key else exp_key
+        if '_' not in cfg or not cfg.split('_')[-1].isdigit():
+            # Not following consensus_numAgents pattern; skip with notice
+            print(f"Skipping {exp_key}: doesn't match consensus_number pattern")
+            continue
+
+        consensus = '_'.join(cfg.split('_')[:-1])
+        num_agents = int(cfg.split('_')[-1])
+
+        for rep_name, robots_dict in loaded_data.get(exp_key, {}).items():
+            # Get the maximum HEIGHT across all robots
+            max_height = 0
+            total_blocks_produced = 0
             
-            if len(subset) > 0:
-                pos = i + (j - len(consensus_types)/2 + 0.5) * width
-                positions.append(pos)
-                box_data.append(subset['propagation_time'].values)
-                box_colors.append(color_map[consensus])
-                if i == 0:  # Only add to labels for first group
-                    labels.append(consensus)
+            for robot, robot_df in robots_dict.items():
+                if not isinstance(robot_df, pd.DataFrame):
+                    continue
+                
+                # Get max height from this robot's data
+                if 'HEIGHT' in robot_df.columns:
+                    robot_max_height = robot_df['HEIGHT'].max()
+                    max_height = max(max_height, robot_max_height)
+            
+            # Get total blocks produced for this rep (if available)
+            if 'block_production_counts' in globals():
+                block_counts = globals().get('block_production_counts', {})
+                if exp_key in block_counts and rep_name in block_counts[exp_key]:
+                    total_blocks_produced = sum(block_counts[exp_key][rep_name].values())
+            
+            # Calculate efficiency: max_height / total_blocks_produced * 100
+            if max_height > 0 and total_blocks_produced > 0:
+                efficiency_pct = (max_height / total_blocks_produced) * 100.0
+                rows.append({
+                    'consensus': consensus,
+                    'num_agents': num_agents,
+                    'rep': rep_name,
+                    'efficiency_pct': efficiency_pct,
+                    'max_height': max_height,
+                    'total_blocks': total_blocks_produced,
+                })
+
+    # Convert to DataFrame
+    plot_df = pd.DataFrame(rows)
     
-    # Create boxplot
-    bp = ax.boxplot(box_data, positions=positions, widths=width*0.8, 
-                    patch_artist=True, showfliers=False)
-    
-    # Color the boxes
-    for patch, color in zip(bp['boxes'], box_colors):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.7)
-    
-    # Set x-axis
-    ax.set_xticks(range(len(agent_counts)))
-    ax.set_xticklabels(agent_counts)
-    ax.set_xlabel('Number of Agents')
-    ax.set_ylabel('Block Propagation Time [s]')
-    ax.set_title('Block Propagation Time by Consensus Protocol and Number of Agents')
-    
-    # Add legend
-    legend_handles = [plt.Rectangle((0,0),1,1, facecolor=color_map[c], alpha=0.7) 
-                     for c in consensus_types]
-    ax.legend(legend_handles, consensus_types, loc='upper left', title='Consensus Protocol')
-    
-    ax.grid(axis='y', linestyle='--', alpha=0.3)
-    
-    plt.tight_layout()
-    plt.show()
-    
-    # Print summary statistics
-    print("\nSummary Statistics:")
-    summary = plot_df.groupby(['consensus', 'num_agents'])['propagation_time'].agg(['count', 'mean', 'median', 'std', 'min', 'max'])
-    print(summary.to_string())
+    # Use generic visualization function
+    _create_consensus_boxplot_visualization(
+        plot_df=plot_df,
+        metric_column='efficiency_pct',
+        ylabel='Efficiency (%)',
+        plot_title='Block Production Efficiency (BPE)',
+        comparison_title='Efficiency Comparison Across Consensus Algorithms',
+        ylim=(0, 100),
+        no_data_message="No efficiency data found. Ensure CSVs contain HEIGHT column and block production data is available."
+    )
