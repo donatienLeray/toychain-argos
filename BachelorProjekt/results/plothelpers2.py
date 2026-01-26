@@ -1,5 +1,7 @@
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple, Set, Callable
+import os
+import math
 
 try:
     import ipywidgets as widgets
@@ -9,6 +11,10 @@ except Exception as e:
     )
 
 from IPython.display import display
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import ticker
 
 
 class ExperimentPicker:
@@ -400,11 +406,116 @@ def create_and_show_picker(data_dir: str | Path = "data") -> ExperimentPicker:
     return picker
 
 
-# Data loading and preview functions
-import os
-import pandas as pd
-import ipywidgets as widgets
+# Helper functions for common patterns
 
+def _parse_config_names(exp_choices: List[str]) -> Tuple[bool, bool, Optional[widgets.Dropdown], Optional[widgets.Dropdown], Optional[Dict], Optional[Dict]]:
+    """Parse experiment choices to determine if they follow consensus_number pattern.
+    
+    Returns:
+        Tuple of (single_exp_mode, split_config_mode, consensus_drop, agents_drop, config_to_exp_or_name_to_exp, description)
+    """
+    single_exp_mode = False
+    split_config_mode = False
+    consensus_drop = None
+    agents_drop = None
+    config_mapping = None
+    description = 'Experiment:'
+    
+    if len(exp_choices) == 0:
+        return single_exp_mode, split_config_mode, consensus_drop, agents_drop, {}, description
+    
+    if all('/' in e for e in exp_choices):
+        prefixes = [e.split('/')[0] for e in exp_choices]
+        if len(set(prefixes)) == 1:
+            single_exp_mode = True
+            description = 'Config:'
+            config_names = [e.split('/')[-1] for e in exp_choices]
+            
+            # Check if configs follow "consensus_number" pattern
+            if all('_' in cfg and cfg.split('_')[-1].isdigit() for cfg in config_names):
+                split_config_mode = True
+                # Extract consensus types and agent numbers
+                consensus_types = sorted(set('_'.join(cfg.split('_')[:-1]) for cfg in config_names))
+                agent_numbers = sorted(set(cfg.split('_')[-1] for cfg in config_names), key=int)
+                
+                consensus_drop = widgets.Dropdown(options=consensus_types, description='Consensus:')
+                agents_drop = widgets.Dropdown(options=agent_numbers, description='# Agents:')
+                
+                # Create mapping from (consensus, agents) to exp key
+                config_mapping = {}
+                for exp in exp_choices:
+                    cfg = exp.split('/')[-1]
+                    consensus = '_'.join(cfg.split('_')[:-1])
+                    agents = cfg.split('_')[-1]
+                    config_mapping[(consensus, agents)] = exp
+                
+                return single_exp_mode, split_config_mode, consensus_drop, agents_drop, config_mapping, description
+    
+    # Original single dropdown mode
+    display_names = exp_choices
+    if single_exp_mode:
+        display_names = [e.split('/', 1)[1] for e in exp_choices]
+    
+    config_mapping = dict(zip(display_names, exp_choices))
+    return single_exp_mode, split_config_mode, None, None, config_mapping, description
+
+
+def _get_current_experiment(split_config_mode: bool, consensus_drop: Optional[widgets.Dropdown], 
+                            agents_drop: Optional[widgets.Dropdown], 
+                            exp_drop: Optional[widgets.Dropdown],
+                            config_to_exp: Dict, name_to_exp: Dict) -> str:
+    """Get the currently selected experiment based on mode."""
+    if split_config_mode:
+        return config_to_exp[(consensus_drop.value, agents_drop.value)]
+    else:
+        return name_to_exp[exp_drop.value]
+
+
+def _update_rep_robot_options(loaded_data: Dict, exp: str, rep_drop: widgets.Dropdown, robot_drop: widgets.Dropdown):
+    """Update rep and robot dropdown options for the selected experiment."""
+    reps = sorted(loaded_data.get(exp, {}).keys())
+    rep_drop.options = ['All'] + reps
+    robots = sorted({r for rep in reps for r in loaded_data[exp][rep].keys()})
+    robot_drop.options = ['All'] + [str(r) for r in robots]
+
+
+def _update_rep_robot_col_options(loaded_data: Dict, exp: str, rep_drop: widgets.Dropdown, 
+                                   robot_drop: widgets.Dropdown, col_drop: widgets.Dropdown):
+    """Update rep, robot, and column dropdown options for the selected experiment."""
+    _update_rep_robot_options(loaded_data, exp, rep_drop, robot_drop)
+    
+    # Get all available columns from all robots of this experiment
+    all_cols = set()
+    for rep in loaded_data.get(exp, {}).values():
+        for df in rep.values():
+            if isinstance(df, pd.DataFrame):
+                all_cols.update(df.columns)
+    
+    col_options = ['All'] + sorted(list(all_cols))
+    col_drop.options = col_options
+    col_drop.value = 'All'
+
+
+def _extract_config_info(exp_key: str) -> Tuple[str, int]:
+    """Extract consensus type and number of agents from experiment key.
+    
+    Expected format: 'consensus_number' or 'experiment/consensus_number'
+    Returns: (consensus_type, num_agents)
+    """
+    if '/' in exp_key:
+        config_name = exp_key.split('/')[-1]
+    else:
+        config_name = exp_key
+    
+    if '_' not in config_name or not config_name.split('_')[-1].isdigit():
+        return None, None
+    
+    consensus = '_'.join(config_name.split('_')[:-1])
+    num_agents = int(config_name.split('_')[-1])
+    return consensus, num_agents
+
+
+# Data loading and preview functions
 
 def create_csv_picker_for_loaded_paths(picker, data_dir=None):
     """For each path in `picker.last_loaded` (each either `data/exp` or `data/exp/cfg`),
@@ -626,65 +737,28 @@ def create_data_picker_with_callback(button_text, callback_func, button_style='p
     loaded_data = globals().get('loaded_data', {})
     exp_choices = sorted(loaded_data.keys())
     
-    # Check if single experiment mode with split config names (consensus_number pattern)
-    single_exp_mode = False
-    split_config_mode = False
-    consensus_drop = None
-    agents_drop = None
-    
-    if len(exp_choices) > 1 and all('/' in exp for exp in exp_choices):
-        prefixes = [exp.split('/')[0] for exp in exp_choices]
-        if len(set(prefixes)) == 1:
-            single_exp_mode = True
-            config_names = [exp.split('/')[-1] for exp in exp_choices]
-            
-            # Check if configs follow "consensus_number" pattern
-            if all('_' in cfg and cfg.split('_')[-1].isdigit() for cfg in config_names):
-                split_config_mode = True
-                # Extract consensus types and agent numbers
-                consensus_types = sorted(set('_'.join(cfg.split('_')[:-1]) for cfg in config_names))
-                agent_numbers = sorted(set(cfg.split('_')[-1] for cfg in config_names), key=int)
-                
-                consensus_drop = widgets.Dropdown(options=consensus_types, description='Consensus:')
-                agents_drop = widgets.Dropdown(options=agent_numbers, description='# Agents:')
+    # Parse config names using helper function
+    single_exp_mode, split_config_mode, consensus_drop, agents_drop, config_mapping, description = _parse_config_names(exp_choices)
     
     if not split_config_mode:
-        # Original single dropdown mode
-        display_names = exp_choices
-        if single_exp_mode:
-            display_names = [exp.split('/')[-1] for exp in exp_choices]
-        
-        name_to_exp = dict(zip(display_names, exp_choices))
-        exp_drop = widgets.Dropdown(options=display_names, description='Experiment:' if not single_exp_mode else 'Config:')
+        exp_drop = widgets.Dropdown(options=list(config_mapping.keys()), description=description)
+        name_to_exp = config_mapping
+        config_to_exp = {}
     else:
         exp_drop = None
-        # Create mapping from (consensus, agents) to exp key
-        config_to_exp = {}
-        for exp in exp_choices:
-            cfg = exp.split('/')[-1]
-            consensus = '_'.join(cfg.split('_')[:-1])
-            agents = cfg.split('_')[-1]
-            config_to_exp[(consensus, agents)] = exp
+        config_to_exp = config_mapping
+        name_to_exp = {}
     
     rep_drop = widgets.Dropdown(options=['All'], description='Rep:', value='All')
     robot_drop = widgets.Dropdown(options=['All'], description='Robot:', value='All')
     preview_out = widgets.Output()
 
     def _update_rep_robot(*_):
-        if split_config_mode:
-            exp = config_to_exp[(consensus_drop.value, agents_drop.value)]
-        else:
-            exp = name_to_exp[exp_drop.value]
-        reps = sorted(loaded_data.get(exp, {}).keys())
-        rep_drop.options = ['All'] + reps
-        robots = sorted({r for rep in reps for r in loaded_data[exp][rep].keys()})
-        robot_drop.options = ['All'] + [str(r) for r in robots]
+        exp = _get_current_experiment(split_config_mode, consensus_drop, agents_drop, exp_drop, config_to_exp, name_to_exp)
+        _update_rep_robot_options(loaded_data, exp, rep_drop, robot_drop)
 
     def _on_button_click(_):
-        if split_config_mode:
-            exp = config_to_exp[(consensus_drop.value, agents_drop.value)]
-        else:
-            exp = name_to_exp[exp_drop.value]
+        exp = _get_current_experiment(split_config_mode, consensus_drop, agents_drop, exp_drop, config_to_exp, name_to_exp)
         rep_sel = rep_drop.value
         robot_sel = robot_drop.value
         callback_func(exp, rep_sel, robot_sel, loaded_data, preview_out)
@@ -712,45 +786,17 @@ def show_loaded_preview():
     loaded_data = globals().get('loaded_data', {})
     exp_choices = sorted(loaded_data.keys())
 
-    # Check if single experiment mode with split config names
-    single_exp_mode = False
-    split_config_mode = False
-    consensus_drop = None
-    agents_drop = None
-    
-    if len(exp_choices) > 0 and all('/' in e for e in exp_choices):
-        prefixes = [e.split('/')[0] for e in exp_choices]
-        if len(set(prefixes)) == 1:
-            single_exp_mode = True
-            config_names = [e.split('/')[-1] for e in exp_choices]
-            
-            # Check if configs follow "consensus_number" pattern
-            if all('_' in cfg and cfg.split('_')[-1].isdigit() for cfg in config_names):
-                split_config_mode = True
-                # Extract consensus types and agent numbers
-                consensus_types = sorted(set('_'.join(cfg.split('_')[:-1]) for cfg in config_names))
-                agent_numbers = sorted(set(cfg.split('_')[-1] for cfg in config_names), key=int)
-                
-                consensus_drop = widgets.Dropdown(options=consensus_types, description='Consensus:')
-                agents_drop = widgets.Dropdown(options=agent_numbers, description='# Agents:')
+    # Parse config names using helper function
+    single_exp_mode, split_config_mode, consensus_drop, agents_drop, config_mapping, description = _parse_config_names(exp_choices)
     
     if not split_config_mode:
-        # Original single dropdown mode
-        display_names = exp_choices
-        if single_exp_mode:
-            display_names = [e.split('/', 1)[1] for e in exp_choices]
-        
-        name_to_exp = dict(zip(display_names, exp_choices))
-        exp_drop = widgets.Dropdown(options=display_names, description='Experiment:' if not single_exp_mode else 'Config:')
+        exp_drop = widgets.Dropdown(options=list(config_mapping.keys()), description=description)
+        name_to_exp = config_mapping
+        config_to_exp = {}
     else:
         exp_drop = None
-        # Create mapping from (consensus, agents) to exp key
-        config_to_exp = {}
-        for exp in exp_choices:
-            cfg = exp.split('/')[-1]
-            consensus = '_'.join(cfg.split('_')[:-1])
-            agents = cfg.split('_')[-1]
-            config_to_exp[(consensus, agents)] = exp
+        config_to_exp = config_mapping
+        name_to_exp = {}
     
     rep_drop = widgets.Dropdown(options=['All'], description='Rep:', value='All')
     robot_drop = widgets.Dropdown(options=['All'], description='Robot:', value='All')
@@ -758,33 +804,13 @@ def show_loaded_preview():
     preview_out = widgets.Output()
 
     def _update_rep_robot_cols(*_):
-        if split_config_mode:
-            exp = config_to_exp[(consensus_drop.value, agents_drop.value)]
-        else:
-            exp = name_to_exp[exp_drop.value]
-        reps = sorted(loaded_data.get(exp, {}).keys())
-        rep_drop.options = ['All'] + reps
-        robots = sorted({r for rep in reps for r in loaded_data[exp][rep].keys()})
-        robot_drop.options = ['All'] + [str(r) for r in robots]
-        
-        # Get all available columns from all robots of this experiment
-        all_cols = set()
-        for rep in loaded_data.get(exp, {}).values():
-            for df in rep.values():
-                if isinstance(df, pd.DataFrame):
-                    all_cols.update(df.columns)
-        
-        col_options = ['All'] + sorted(list(all_cols))
-        col_drop.options = col_options
-        col_drop.value = 'All'
+        exp = _get_current_experiment(split_config_mode, consensus_drop, agents_drop, exp_drop, config_to_exp, name_to_exp)
+        _update_rep_robot_col_options(loaded_data, exp, rep_drop, robot_drop, col_drop)
 
     def _preview(_):
         with preview_out:
             preview_out.clear_output()
-            if split_config_mode:
-                exp = config_to_exp[(consensus_drop.value, agents_drop.value)]
-            else:
-                exp = name_to_exp[exp_drop.value]
+            exp = _get_current_experiment(split_config_mode, consensus_drop, agents_drop, exp_drop, config_to_exp, name_to_exp)
             rep_sel = rep_drop.value
             robot_sel = robot_drop.value
             col_sel = col_drop.value
@@ -1034,10 +1060,6 @@ def show_histogram(column_name, *dedup_keys, bins=100, xlabel=None, ylabel='Cumu
         ylabel: Label for y-axis (default: 'Cumulative Percentage')
         title: Title for the plot (default: '{column_name} Distribution - {exp}')
     """
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from matplotlib import ticker
-    
     def _histogram_callback(exp, rep_sel, robot_sel, loaded_data, preview_out):
         with preview_out:
             preview_out.clear_output()
@@ -1148,7 +1170,8 @@ def _create_consensus_boxplot_visualization(
     no_data_message="No data found."
 ):
     """
-    Generic visualization function for consensus/agent metrics with 4 boxplots + 1 comparison chart.
+    Generic visualization function for consensus/agent metrics with N boxplots + 1 comparison chart.
+    Dynamically adjusts grid layout based on number of consensus types.
     
     Args:
         plot_df: DataFrame with columns 'consensus', 'num_agents', and metric_column
@@ -1161,6 +1184,7 @@ def _create_consensus_boxplot_visualization(
     """
     import numpy as np
     import matplotlib.pyplot as plt
+    import math
     
     if plot_df.empty:
         print(no_data_message)
@@ -1168,20 +1192,37 @@ def _create_consensus_boxplot_visualization(
     
     # Get unique consensus types and assign colors
     consensus_types = sorted(plot_df['consensus'].unique())
-    colors = plt.cm.tab10(np.linspace(0, 1, len(consensus_types)))
+    n_consensus = len(consensus_types)
+    
+    # Use tab20 colormap for more distinct colors if needed
+    if n_consensus <= 10:
+        colors = plt.cm.tab10(np.linspace(0, 1, min(n_consensus, 10)))
+    else:
+        colors = plt.cm.tab20(np.linspace(0, 1, min(n_consensus, 20)))
     color_map = dict(zip(consensus_types, colors))
     
     # Get unique agent counts for x-axis positions
     agent_counts = sorted(plot_df['num_agents'].unique())
     
-    # Create figure with 5 subplots: 4 boxplots (2x2) + 1 line chart
-    fig = plt.figure(figsize=(16, 12))
-    gs = fig.add_gridspec(3, 2, hspace=0.3, wspace=0.3)
+    # Determine grid layout based on number of consensus types
+    # Use 2 columns for <= 6, 3 columns for 7-12, 4 columns for > 12
+    if n_consensus <= 6:
+        n_cols = 2
+    elif n_consensus <= 12:
+        n_cols = 3
+    else:
+        n_cols = 4
     
-    # Create 4 boxplot subplots (one per consensus)
+    n_rows = math.ceil(n_consensus / n_cols)
+    
+    # Create figure with dynamic grid: n_rows for boxplots + 1 for line chart
+    fig = plt.figure(figsize=(6 * n_cols, 4 * n_rows + 5))
+    gs = fig.add_gridspec(n_rows + 1, n_cols, hspace=0.3, wspace=0.3)
+    
+    # Create boxplot subplots (one per consensus)
     for idx, consensus in enumerate(consensus_types):
-        row = idx // 2
-        col = idx % 2
+        row = idx // n_cols
+        col = idx % n_cols
         ax = fig.add_subplot(gs[row, col])
         
         # Prepare data for this consensus
@@ -1214,8 +1255,8 @@ def _create_consensus_boxplot_visualization(
             if ylim:
                 ax.set_ylim(ylim)
     
-    # Create line chart comparing all consensus algorithms (larger, spanning 2 columns)
-    ax_line = fig.add_subplot(gs[2, :])
+    # Create line chart comparing all consensus algorithms (spanning all columns at bottom)
+    ax_line = fig.add_subplot(gs[n_rows, :])
     
     for consensus in consensus_types:
         trend_agents = []
@@ -1278,19 +1319,11 @@ def show_block_propagation_boxplot():
     data_for_plot = []
     
     for exp_key in exp_choices:
-        # Extract consensus and agent count from exp_key
-        if '/' in exp_key:
-            config_name = exp_key.split('/')[-1]
-        else:
-            config_name = exp_key
-        
-        # Parse config_name (e.g., "ProofOfAuthority_10")
-        if '_' not in config_name or not config_name.split('_')[-1].isdigit():
+        # Extract consensus and agent count using helper function
+        consensus, num_agents = _extract_config_info(exp_key)
+        if consensus is None or num_agents is None:
             print(f"Skipping {exp_key}: doesn't match consensus_number pattern")
             continue
-        
-        consensus = '_'.join(config_name.split('_')[:-1])
-        num_agents = int(config_name.split('_')[-1])
         
         # Calculate propagation time for each block in this configuration
         for rep_name, robots_dict in loaded_data.get(exp_key, {}).items():
@@ -1358,14 +1391,12 @@ def show_efficiency_boxplot():
     rows = []  # each row: consensus, num_agents, rep, efficiency_pct
 
     for exp_key in exp_choices:
-        cfg = exp_key.split('/')[-1] if '/' in exp_key else exp_key
-        if '_' not in cfg or not cfg.split('_')[-1].isdigit():
+        # Extract consensus and agent count using helper function
+        consensus, num_agents = _extract_config_info(exp_key)
+        if consensus is None or num_agents is None:
             # Not following consensus_numAgents pattern; skip with notice
             print(f"Skipping {exp_key}: doesn't match consensus_number pattern")
             continue
-
-        consensus = '_'.join(cfg.split('_')[:-1])
-        num_agents = int(cfg.split('_')[-1])
 
         for rep_name, robots_dict in loaded_data.get(exp_key, {}).items():
             # Get the maximum HEIGHT across all robots

@@ -44,7 +44,7 @@ params['scs'] = dict()
 params['scs']['files'] = str(os.environ["SCNAME"])
 params['scs']['trans_reward'] = 1
 params['scs']['decay'] = 50
-params['scs']['update'] = 'connectivity_Index'
+params['scs']['update'] = 'hello_index'
 
 # debug parameters
 params['debug'] = dict()

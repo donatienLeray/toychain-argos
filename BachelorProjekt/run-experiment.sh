@@ -158,31 +158,95 @@ run() {
 #done
 
 
-EXP=different_consensus_2_POA
+#EXP=is_poc_really_good
+#
+## run experiment with different consensus mechanisms
+#for consensus in "ProofOfConnection"; do
+#
+#	# standard values
+#	config "TPS" 10
+#	config "REPS" 10
+#	config "LENGTH" 400
+#	config "REP_SEED" "True"
+#	config "CONSENSUS" "$consensus"
+#	loopconfig "debug" "main" "False"
+#	loopconfig "debug" "loop" "True"
+#
+#	# run experiment with increasing range of robots
+#	for UTIL in $(seq 5 5 25); do 
+#		#name of the configuration
+#		CFG=${consensus}_${UTIL}
+#		# set number of robots
+#		config "NUMROBOTS" "${UTIL}"
+#		# run experiment
+#		wait
+#		run "${EXP}/${CFG}" $@
+#	done
+#
+#done
 
-# run experiment with different consensus mechanisms
-for consensus in "ProofOfAuthority"; do
 
-	# standard values
-	config "TPS" 10
-	config "REPS" 10
-	config "LENGTH" 400
-	config "REP_SEED" "True"
-	config "CONSENSUS" "$consensus"
-	loopconfig "debug" "main" "False"
-	loopconfig "debug" "loop" "True"
+# DEFINE EXPERIMENT
+EXP=POC2
+
+# standard values
+config "TPS" 10
+config "REPS" 10
+config "LENGTH" 400
+config "REP_SEED" "True"
+config "CONSENSUS" "ProofOfConnection"
+loopconfig "debug" "main" "False"
+loopconfig "debug" "loop" "True"
+
+# run experiment with different update functions
+for UFC in "hello_index" "peer_index"; do
+	# set update function
+	loopconfig "scs" "lottery_update" "${UFC}"
 
 	# run experiment with increasing range of robots
-	for UTIL in $(seq 5 5 25); do 
-		#name of the configuration
-		CFG=${consensus}_${UTIL}
+	for AGT in $(seq 5 5 25); do 
 		# set number of robots
-		config "NUMROBOTS" "${UTIL}"
+		config "NUMROBOTS" "${AGT}"
+		
+		#name of the configuration
+		CFG="${UFC}_${AGT}"
 		# run experiment
 		wait
 		run "${EXP}/${CFG}" $@
-	done
 
+	done
+done
+
+
+# DEFINE EXPERIMENT
+EXP=POC2_peer_vary_decay
+
+# standard values
+config "TPS" 10
+config "REPS" 10
+config "LENGTH" 400
+config "REP_SEED" "True"
+config "CONSENSUS" "ProofOfConnection"
+loopconfig "debug" "main" "False"
+loopconfig "debug" "loop" "True"
+
+for DEC in $(seq 10 10 100); do
+
+	# set update function
+	loopconfig "scs" "decay" "${DEC}"
+
+	# run experiment with increasing range of robots
+	for AGT in $(seq 5 5 25); do 
+		# set number of robots
+		config "NUMROBOTS" "${AGT}"
+
+		#name of the configuration
+		CFG="${DEC}_${AGT}"
+		# run experiment
+		wait
+		run "${EXP}/${CFG}" $@
+
+	done
 done
 
 

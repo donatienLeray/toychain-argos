@@ -203,6 +203,8 @@ def controlstep():
     ###########################
 
     def peering():
+        
+        changed = False
 
         # Get the current peers from erb if they have higher difficulty chain
         erb_enodes = {w3.gen_enode(peer.id) for peer in erb.peers if peer.getData(indices=[1,2]) > w3.get_total_difficulty() or peer.data[3] != w3.mempool_hash(astype='int')}
@@ -213,6 +215,7 @@ def controlstep():
                 w3.add_peer(enode)
             except Exception as e:
                 raise e
+            changed = True
             
         # Remove peers from the toychain
         for enode in set(w3.peers)-erb_enodes:
@@ -220,6 +223,15 @@ def controlstep():
                 w3.remove_peer(enode)
             except Exception as e:
                 raise e
+            changed = True
+            
+        if changed:
+            # When peers change, record them in the smart contract
+            for peer in w3.peers:
+                txdata = {'function': 'AddPeer', 'inputs': [enode_to_id(peer)]}
+                tx = Transaction(sender = me.id, data = txdata, timestamp = w3.custom_timer.time())
+                w3.send_transaction(tx)
+            changed = False
 
         # Turn on LEDs according to geth peer count
         rgb.setLED(rgb.all, rgb.presets.get(len(w3.peers), 3*['red']))
