@@ -225,7 +225,7 @@ def controlstep():
                 raise e
             changed = True
             
-        if changed:
+        if ConsensusClass.__name__ == "ProofOfConnection" and changed:
             # When peers change, record them in the smart contract
             for peer in w3.peers:
                 txdata = {'function': 'AddPeer', 'inputs': [enode_to_id(peer)]}
@@ -403,7 +403,7 @@ def destroy():
                         [block.height,                           # HEIGHT
                          block.number,                           # BLOCK
                          block.timestamp,                        # TIMESTAMP
-                         w3.custom_timer.time()-block.timestamp, # TELAPSED
+                         0 if block.reception == 0 else block.reception - block.timestamp,      # TELAPSED
                          block.reception,                        # RECEPTION
                          sys.getsizeof(block) / 1024,            # SIZE (KB)
                          len(block.data),                        # TXS
@@ -419,7 +419,7 @@ def destroy():
                 try:
                     logs['sc'].log(
                         [block.state.n,                                   # N
-                         block.state.private if hasattr(block.state, 'private') else '',  # PRIVATE
+                         block.state.private if hasattr(block.state, 'private') else {},  # PRIVATE
                          block.state.balances,                            # BALANCES
                         ])
                 except Exception as e:

@@ -515,6 +515,39 @@ def _extract_config_info(exp_key: str) -> Tuple[str, int]:
     return consensus, num_agents
 
 
+def get_main_chain(robots_dict: Dict) -> Optional[pd.DataFrame]:
+    """Return the robot chain with the highest TDIFF on its last block.
+
+    The "last block" is chosen as the row with max HEIGHT when available, otherwise
+    the final row. Returns None if no suitable chain is found.
+    """
+    main_chain_df = None
+    best_tdiff = None
+
+    for _, df in robots_dict.items():
+        if not isinstance(df, pd.DataFrame):
+            continue
+        if 'TDIFF' not in df.columns:
+            continue
+
+        if 'HEIGHT' in df.columns and not df['HEIGHT'].isna().all():
+            last_row = df.loc[df['HEIGHT'].idxmax()]
+        else:
+            if len(df.index) == 0:
+                continue
+            last_row = df.iloc[-1]
+
+        tdiff = last_row.get('TDIFF', None)
+        if pd.isna(tdiff):
+            continue
+
+        if best_tdiff is None or tdiff > best_tdiff:
+            best_tdiff = tdiff
+            main_chain_df = df
+
+    return main_chain_df
+
+
 # Data loading and preview functions
 
 def create_csv_picker_for_loaded_paths(picker, data_dir=None):
@@ -1160,6 +1193,454 @@ def show_histogram(column_name, *dedup_keys, bins=100, xlabel=None, ylabel='Cumu
     create_data_picker_with_callback('Show Histogram', _histogram_callback, 'primary')
 
 
+def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None):
+    """Show cumulative block reception interval distribution with separated 1-second bins.
+    
+    Each bin represents 1 second (10 timesteps) and is displayed as a bar.
+    Bars are separated by dashed lines. X-axis shows time in seconds, Y-axis shows cumulative %.
+    """
+    if 'loaded_data' not in globals() or not globals().get('loaded_data'):
+        print("No `loaded_data` available. Use the picker and click Load data first.")
+        return
+
+    loaded_data = globals().get('loaded_data', {})
+    exp_choices = sorted(loaded_data.keys())
+    single_exp_mode, split_config_mode, consensus_drop, agents_drop, config_mapping, _ = _parse_config_names(exp_choices)
+
+    def _compute_reception_intervals(exp_key):
+        dfs = []
+        for rep, robots in loaded_data.get(exp_key, {}).items():
+            for robot, df in robots.items():
+                if isinstance(df, pd.DataFrame):
+                    if 'HASH' not in df.columns or 'RECEPTION' not in df.columns or 'TIMESTAMP' not in df.columns:
+                        continue
+                    df_copy = df[['HASH', 'RECEPTION', 'TIMESTAMP']].copy()
+                    df_copy['REP'] = rep
+                    dfs.append(df_copy)
+
+        if not dfs:
+            return []
+
+        combined = pd.concat(dfs, ignore_index=True)
+
+        intervals = []
+        for (rep, block_hash), group in combined.groupby(['REP', 'HASH']):
+            timestamps = group['TIMESTAMP'].dropna().values
+            if len(timestamps) == 0:
+                continue
+            block_timestamp = np.min(timestamps)
+
+            receptions = group['RECEPTION'].dropna()
+            receptions = receptions[receptions > 0].sort_values().values
+            if len(receptions) == 0:
+                continue
+
+            series = np.concatenate(([block_timestamp], receptions))
+            diffs = np.diff(series)
+            intervals.extend(diffs)
+
+        return intervals
+
+    if split_config_mode:
+        preview_out = widgets.Output()
+        btn = widgets.Button(description='Show Reception Bins', button_style='primary')
+
+        def _on_button_click(_):
+            with preview_out:
+                preview_out.clear_output()
+                intervals_by_consensus = {}
+
+                consensus_types = list(consensus_drop.options)
+                for consensus in consensus_types:
+                    exp_key = config_mapping.get((consensus, agents_drop.value))
+                    if not exp_key:
+                        continue
+                    intervals = _compute_reception_intervals(exp_key)
+                    if intervals:
+                        intervals_by_consensus[consensus] = intervals
+
+                if not intervals_by_consensus:
+                    print("No valid reception interval data found for the selected agent count.")
+                    return
+
+                bin_width = 10
+                max_val = max(max(vals) for vals in intervals_by_consensus.values())
+                max_bin = int(np.ceil(max_val / bin_width)) * bin_width
+                bin_edges = np.arange(bin_width, max_bin + bin_width, bin_width)
+                bin_centers = (bin_edges[:-1] + bin_width / 2) / 10
+                bin_width_sec = bin_width / 10
+
+                n_consensus = len(intervals_by_consensus)
+                ncols = min(3, n_consensus)
+                nrows = math.ceil(n_consensus / ncols)
+                fig, axes = plt.subplots(nrows, ncols, figsize=(14, 4 * nrows), squeeze=False)
+
+                for idx, (consensus, intervals) in enumerate(sorted(intervals_by_consensus.items())):
+                    ax = axes[idx // ncols][idx % ncols]
+                    data_to_plot = pd.Series(intervals).dropna()
+                    data_to_plot = data_to_plot[data_to_plot > 0].values
+
+                    if len(data_to_plot) == 0:
+                        ax.set_visible(False)
+                        continue
+
+                    hist, _ = np.histogram(data_to_plot, bins=bin_edges)
+                    hist_sum = hist.sum()
+                    if hist_sum > 0:
+                        cumsum = np.cumsum(hist.astype(np.float32))
+                        cumsum_pct = (cumsum / hist_sum) * 100
+                    else:
+                        cumsum_pct = np.zeros_like(hist, dtype=np.float32)
+
+                    for i, (center, height) in enumerate(zip(bin_centers, cumsum_pct)):
+                        ax.bar(center, height, width=bin_width_sec, color='green', alpha=0.6, zorder=3, edgecolor='black', linewidth=0.5)
+                        if i < len(bin_centers) - 1:
+                            right_edge = center + bin_width_sec / 2
+                            ax.plot([right_edge, right_edge], [0, 100], 'k--', linewidth=1, zorder=2, alpha=0.5)
+
+                    ax.grid(axis='y', linestyle='--', color='gray', alpha=0.3, zorder=1)
+                    ax.set_xscale('log')
+                    ax.set_ylim(ymin=0, ymax=100)
+                    ax.set_xlim(xmin=bin_centers.min(), xmax=max(bin_centers) + bin_width_sec / 2)
+                    ax.set_title(consensus)
+                    ax.set_xlabel(xlabel if xlabel is not None else 'Block Reception Interval [s]', fontsize=11)
+                    ax.set_ylabel(ylabel, fontsize=11)
+                    ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=100, decimals=0))
+                    ax.text(max(bin_centers) * 0.95, cumsum_pct.max() * 0.2,
+                            f'n={len(data_to_plot):,} intervals', ha='right', fontsize=9,
+                            zorder=4, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+                for idx in range(n_consensus, nrows * ncols):
+                    axes[idx // ncols][idx % ncols].set_visible(False)
+
+                fig.suptitle(title if title is not None else f'Block Reception Interval Distribution (Agents: {agents_drop.value})', fontsize=13)
+                plt.tight_layout()
+                plt.show()
+
+        btn.on_click(_on_button_click)
+        display(widgets.VBox([widgets.HBox([agents_drop, btn]), preview_out]))
+        return
+
+    def _reception_bins_callback(exp, rep_sel, robot_sel, loaded_data, preview_out):
+        with preview_out:
+            preview_out.clear_output()
+            dfs = []
+            
+            for rep, robots in loaded_data.get(exp, {}).items():
+                if rep_sel != 'All' and rep != rep_sel:
+                    continue
+                for robot, df in robots.items():
+                    if robot_sel != 'All' and str(robot) != robot_sel:
+                        continue
+                    if isinstance(df, pd.DataFrame):
+                        if 'HASH' not in df.columns or 'RECEPTION' not in df.columns or 'TIMESTAMP' not in df.columns:
+                            print(f'Warning: Missing columns in {exp}/{rep}/robot_{robot}')
+                            continue
+                        df_copy = df[['HASH', 'RECEPTION', 'TIMESTAMP']].copy()
+                        df_copy['REP'] = rep
+                        dfs.append(df_copy)
+            
+            if not dfs:
+                print(f'No data found for RECEPTION in {exp}')
+                return
+            
+            combined = pd.concat(dfs, ignore_index=True)
+            
+            # Build per-block reception intervals:
+            # first_reception - timestamp, then reception2 - reception1, etc.
+            intervals = []
+            for (rep, block_hash), group in combined.groupby(['REP', 'HASH']):
+                timestamps = group['TIMESTAMP'].dropna().values
+                if len(timestamps) == 0:
+                    continue
+                block_timestamp = np.min(timestamps)
+
+                receptions = group['RECEPTION'].dropna()
+                receptions = receptions[receptions > 0].sort_values().values
+                if len(receptions) == 0:
+                    continue
+
+                series = np.concatenate(([block_timestamp], receptions))
+                diffs = np.diff(series)
+                intervals.extend(diffs)
+
+            data_to_plot = pd.Series(intervals).dropna()
+            data_to_plot = data_to_plot[data_to_plot > 0].values
+            
+            if len(data_to_plot) == 0:
+                print(f'No valid RECEPTION-TIMESTAMP data found for {exp}')
+                return
+            
+            # Create figure
+            fig, ax = plt.subplots(1, 1, figsize=(14, 5))
+            
+            # Fixed 1-second bins (10 timesteps)
+            bin_width = 10
+            max_val = data_to_plot.max()
+            max_bin = int(np.ceil(max_val / bin_width)) * bin_width
+            bin_edges = np.arange(bin_width, max_bin + bin_width, bin_width)
+            
+            # Count occurrences in each bin
+            hist, _ = np.histogram(data_to_plot, bins=bin_edges)
+            
+            # Calculate cumulative percentage
+            hist_sum = hist.sum()
+            if hist_sum > 0:
+                cumsum = np.cumsum(hist.astype(np.float32))
+                cumsum_pct = (cumsum / hist_sum) * 100
+            else:
+                cumsum_pct = np.zeros_like(hist, dtype=np.float32)
+            
+            # Create bars for each bin
+            bin_centers = (bin_edges[:-1] + bin_width / 2) / 10  # Convert to seconds
+            bin_width_sec = bin_width / 10  # Width in seconds
+            
+            # Plot bars with dashed lines between them
+            for i, (center, height) in enumerate(zip(bin_centers, cumsum_pct)):
+                left = center - bin_width_sec / 2
+                ax.bar(center, height, width=bin_width_sec, color='green', alpha=0.6, zorder=3, edgecolor='black', linewidth=0.5)
+                
+                # Add dashed vertical line between bins (except after last bin)
+                if i < len(bin_centers) - 1:
+                    right_edge = center + bin_width_sec / 2
+                    ax.plot([right_edge, right_edge], [0, 100], 'k--', linewidth=1, zorder=2, alpha=0.5)
+            
+            ax.grid(axis='y', linestyle='--', color='gray', alpha=0.3, zorder=1)
+            
+            # Add text annotation with sample count
+            n_samples = len(data_to_plot)
+            ax.text(max(bin_centers) * 0.95, cumsum_pct.max() * 0.2,
+                f'n={n_samples:,} receptions', ha='right', fontsize=10,
+                zorder=4, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            
+            ax.set_xscale('log')
+            ax.set_ylim(ymin=0, ymax=100)
+            ax.set_xlim(xmin=bin_centers.min(), xmax=max(bin_centers) + bin_width_sec / 2)
+            
+            ax.set_xlabel(xlabel if xlabel is not None else 'Block  Reception Time [s]', fontsize=11)
+            ax.set_ylabel(ylabel, fontsize=11)
+            ax.set_title(title if title is not None else f'Block Reception Distribution - {exp}', fontsize=12)
+            ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=100, decimals=0))
+            
+            plt.tight_layout()
+            plt.show()
+    
+    create_data_picker_with_callback('Show Reception Bins', _reception_bins_callback, 'primary')
+
+
+def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', title=None):
+    """Show cumulative block production delay distribution with separated bins.
+    
+    Each bin represents the same width as the reception bins and is displayed as a bar.
+    Bars are separated by dashed lines. X-axis shows time in seconds, Y-axis shows cumulative %.
+    """
+    if 'loaded_data' not in globals() or not globals().get('loaded_data'):
+        print("No `loaded_data` available. Use the picker and click Load data first.")
+        return
+
+    loaded_data = globals().get('loaded_data', {})
+    exp_choices = sorted(loaded_data.keys())
+    single_exp_mode, split_config_mode, consensus_drop, agents_drop, config_mapping, _ = _parse_config_names(exp_choices)
+
+    def _compute_delays(exp_key, rep_sel='All', robot_sel='All'):
+        delays = []
+        for rep, robots in loaded_data.get(exp_key, {}).items():
+            if rep_sel != 'All' and rep != rep_sel:
+                continue
+
+            if robot_sel == 'All':
+                chain_df = get_main_chain(robots)
+            else:
+                chain_df = robots.get(int(robot_sel)) if robot_sel.isdigit() else None
+
+            if not isinstance(chain_df, pd.DataFrame):
+                continue
+            if 'TIMESTAMP' not in chain_df.columns or 'HASH' not in chain_df.columns:
+                continue
+
+            unique_blocks = chain_df.groupby('HASH', as_index=False)['TIMESTAMP'].min()
+            timestamps = unique_blocks['TIMESTAMP'].dropna().sort_values().values
+            if len(timestamps) < 3:
+                continue
+
+            block_diffs = np.diff(timestamps)
+            delays.extend(block_diffs[1:])  # skip genesis -> block 1
+
+        return delays
+
+    if split_config_mode:
+        preview_out = widgets.Output()
+        btn = widgets.Button(description='Show Production Delay Bins', button_style='primary')
+
+        def _on_button_click(_):
+            with preview_out:
+                preview_out.clear_output()
+                delays_by_consensus = {}
+
+                consensus_types = list(consensus_drop.options)
+                for consensus in consensus_types:
+                    exp_key = config_mapping.get((consensus, agents_drop.value))
+                    if not exp_key:
+                        continue
+                    delays = _compute_delays(exp_key, rep_sel='All', robot_sel='All')
+                    if delays:
+                        delays_by_consensus[consensus] = delays
+
+                if not delays_by_consensus:
+                    print("No valid production delay data found for the selected agent count.")
+                    return
+
+                bin_width = 10
+                max_val = max(max(vals) for vals in delays_by_consensus.values())
+                max_bin = int(np.ceil(max_val / bin_width)) * bin_width
+                bin_edges = np.arange(0, max_bin + bin_width, bin_width)
+                bin_centers = (bin_edges[:-1] + bin_width / 2) / 10
+                bin_width_sec = bin_width / 10
+
+                n_consensus = len(delays_by_consensus)
+                ncols = min(3, n_consensus)
+                nrows = math.ceil(n_consensus / ncols)
+                fig, axes = plt.subplots(nrows, ncols, figsize=(14, 4 * nrows), squeeze=False)
+
+                for idx, (consensus, delays) in enumerate(sorted(delays_by_consensus.items())):
+                    ax = axes[idx // ncols][idx % ncols]
+                    data_to_plot = pd.Series(delays).dropna()
+                    data_to_plot = data_to_plot[data_to_plot >= 0].values
+
+                    hist, _ = np.histogram(data_to_plot, bins=bin_edges)
+                    hist_sum = hist.sum()
+                    if hist_sum > 0:
+                        cumsum = np.cumsum(hist.astype(np.float32))
+                        cumsum_pct = (cumsum / hist_sum) * 100
+                    else:
+                        cumsum_pct = np.zeros_like(hist, dtype=np.float32)
+
+                    for i, (center, height) in enumerate(zip(bin_centers, cumsum_pct)):
+                        ax.bar(center, height, width=bin_width_sec, color='purple', alpha=0.6, zorder=3, edgecolor='black', linewidth=0.5)
+                        if i < len(bin_centers) - 1:
+                            right_edge = center + bin_width_sec / 2
+                            ax.plot([right_edge, right_edge], [0, 100], 'k--', linewidth=1, zorder=2, alpha=0.5)
+
+                    ax.grid(axis='y', linestyle='--', color='gray', alpha=0.3, zorder=1)
+                    ax.set_ylim(ymin=0, ymax=100)
+                    ax.set_xlim(xmin=0, xmax=max(bin_centers) + bin_width_sec / 2)
+                    ax.set_title(consensus)
+                    ax.set_xlabel(xlabel if xlabel is not None else 'Block Production Delay [s]', fontsize=11)
+                    ax.set_ylabel(ylabel, fontsize=11)
+                    ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=100, decimals=0))
+                    ax.text(max(bin_centers) * 0.95, cumsum_pct.max() * 0.2,
+                            f'n={len(data_to_plot):,} delays', ha='right', fontsize=9,
+                            zorder=4, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+                # Hide unused subplots
+                for idx in range(n_consensus, nrows * ncols):
+                    axes[idx // ncols][idx % ncols].set_visible(False)
+
+                fig.suptitle(title if title is not None else f'Block Production Delay Distribution (Agents: {agents_drop.value})', fontsize=13)
+                plt.tight_layout()
+                plt.show()
+
+        btn.on_click(_on_button_click)
+        display(widgets.VBox([widgets.HBox([agents_drop, btn]), preview_out]))
+        return
+
+    def _production_delay_bins_callback(exp, rep_sel, robot_sel, loaded_data, preview_out):
+        with preview_out:
+            preview_out.clear_output()
+            delays = []
+
+            for rep, robots in loaded_data.get(exp, {}).items():
+                if rep_sel != 'All' and rep != rep_sel:
+                    continue
+
+                # Choose chain: main chain by default, or a specific robot if selected
+                if robot_sel == 'All':
+                    chain_df = get_main_chain(robots)
+                else:
+                    chain_df = robots.get(int(robot_sel)) if robot_sel.isdigit() else None
+
+                if not isinstance(chain_df, pd.DataFrame):
+                    continue
+                if 'TIMESTAMP' not in chain_df.columns or 'HASH' not in chain_df.columns:
+                    print(f'Warning: Missing columns in {exp}/{rep}')
+                    continue
+
+                # Use unique blocks on the main chain, ordered by timestamp
+                unique_blocks = chain_df.groupby('HASH', as_index=False)['TIMESTAMP'].min()
+                timestamps = unique_blocks['TIMESTAMP'].dropna().sort_values().values
+                if len(timestamps) < 3:
+                    continue
+
+                block_diffs = np.diff(timestamps)
+                # Skip the first delay (genesis -> block 1)
+                delays.extend(block_diffs[1:])
+
+            if not delays:
+                print(f'No data found for TIMESTAMP in {exp}')
+                return
+
+            data_to_plot = pd.Series(delays).dropna()
+            data_to_plot = data_to_plot[data_to_plot >= 0].values
+
+            if len(data_to_plot) == 0:
+                print(f'No valid production delay data found for {exp}')
+                return
+
+            # Create figure
+            fig, ax = plt.subplots(1, 1, figsize=(14, 5))
+
+            # Fixed bins (match reception bins)
+            bin_width = 10
+            max_val = data_to_plot.max()
+            max_bin = int(np.ceil(max_val / bin_width)) * bin_width
+            bin_edges = np.arange(0, max_bin + bin_width, bin_width)
+
+            # Count occurrences in each bin
+            hist, _ = np.histogram(data_to_plot, bins=bin_edges)
+
+            # Calculate cumulative percentage
+            hist_sum = hist.sum()
+            if hist_sum > 0:
+                cumsum = np.cumsum(hist.astype(np.float32))
+                cumsum_pct = (cumsum / hist_sum) * 100
+            else:
+                cumsum_pct = np.zeros_like(hist, dtype=np.float32)
+
+            # Create bars for each bin
+            bin_centers = (bin_edges[:-1] + bin_width / 2) / 10  # Convert to seconds
+            bin_width_sec = bin_width / 10  # Width in seconds
+
+            # Plot bars with dashed lines between them
+            for i, (center, height) in enumerate(zip(bin_centers, cumsum_pct)):
+                ax.bar(center, height, width=bin_width_sec, color='purple', alpha=0.6, zorder=3, edgecolor='black', linewidth=0.5)
+
+                # Add dashed vertical line between bins (except after last bin)
+                if i < len(bin_centers) - 1:
+                    right_edge = center + bin_width_sec / 2
+                    ax.plot([right_edge, right_edge], [0, 100], 'k--', linewidth=1, zorder=2, alpha=0.5)
+
+            ax.grid(axis='y', linestyle='--', color='gray', alpha=0.3, zorder=1)
+
+            # Add text annotation with sample count
+            n_samples = len(data_to_plot)
+            ax.text(max(bin_centers) * 0.95, cumsum_pct.max() * 0.2,
+                    f'n={n_samples:,} delays', ha='right', fontsize=10,
+                    zorder=4, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+            ax.set_ylim(ymin=0, ymax=100)
+            ax.set_xlim(xmin=0, xmax=max(bin_centers) + bin_width_sec / 2)
+
+            ax.set_xlabel(xlabel if xlabel is not None else 'Block Production Delay [s]', fontsize=11)
+            ax.set_ylabel(ylabel, fontsize=11)
+            ax.set_title(title if title is not None else f'Block Production Delay Distribution - {exp}', fontsize=12)
+            ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=100, decimals=0))
+
+            plt.tight_layout()
+            plt.show()
+
+            create_data_picker_with_callback('Show Production Delay Bins', _production_delay_bins_callback, 'primary')
+
+
 def _create_consensus_boxplot_visualization(
     plot_df, 
     metric_column, 
@@ -1327,8 +1808,14 @@ def show_block_propagation_boxplot():
         
         # Calculate propagation time for each block in this configuration
         for rep_name, robots_dict in loaded_data.get(exp_key, {}).items():
+            # Get number of robots in this rep
+            num_robots = len(robots_dict)
+            if num_robots == 0:
+                continue
+            
             # For each unique block (by HASH), find the time difference between
             # first reception and last reception across all robots
+            # Only consider blocks that were received by ALL robots
             
             block_times = {}  # hash -> list of (robot, timestamp)
             
@@ -1346,9 +1833,10 @@ def show_block_propagation_boxplot():
                         block_times[block_hash] = []
                     block_times[block_hash].append((robot_id, timestamp))
             
-            # Calculate propagation time for each block
+            # Calculate propagation time ONLY for blocks received by ALL robots
             for block_hash, times in block_times.items():
-                if len(times) < 2:  # Need at least 2 robots to calculate propagation
+                # Only include blocks that all robots received
+                if len(times) != num_robots:
                     continue
                 
                 timestamps = [t for _, t in times]
@@ -1399,18 +1887,13 @@ def show_efficiency_boxplot():
             continue
 
         for rep_name, robots_dict in loaded_data.get(exp_key, {}).items():
-            # Get the maximum HEIGHT across all robots
+            # Get the main chain height based on highest last-block TDIFF
             max_height = 0
             total_blocks_produced = 0
             
-            for robot, robot_df in robots_dict.items():
-                if not isinstance(robot_df, pd.DataFrame):
-                    continue
-                
-                # Get max height from this robot's data
-                if 'HEIGHT' in robot_df.columns:
-                    robot_max_height = robot_df['HEIGHT'].max()
-                    max_height = max(max_height, robot_max_height)
+            main_chain_df = get_main_chain(robots_dict)
+            if isinstance(main_chain_df, pd.DataFrame) and 'HEIGHT' in main_chain_df.columns:
+                max_height = main_chain_df['HEIGHT'].max()
             
             # Get total blocks produced for this rep (if available)
             if 'block_production_counts' in globals():

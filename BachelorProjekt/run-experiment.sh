@@ -185,9 +185,35 @@ run() {
 #
 #done
 
+#
+# DEFINE EXPERIMENT
+#EXP=POC2
+#
+## standard values
+#config "TPS" 10
+#config "REPS" 10
+#config "LENGTH" 400
+#config "REP_SEED" "True"
+#config "CONSENSUS" "ProofOfConnection"
+#loopconfig "debug" "main" "False"
+#loopconfig "debug" "loop" "True"
+#loopconfig "scs" "lottery_update" "peer_index"
+#
+## run experiment with increasing range of robots
+#for AGT in $(seq 5 5 25); do 
+#	# set number of robots
+#	config "NUMROBOTS" "${AGT}"	
+#	#name of the configuration
+#	CFG="ProofOfConnection_${AGT}"
+#	# run experiment
+#	wait
+#	run "${EXP}/${CFG}" $@
+#
+#done
+
 
 # DEFINE EXPERIMENT
-EXP=POC2
+EXP=POC_vary_decay
 
 # standard values
 config "TPS" 10
@@ -198,47 +224,14 @@ config "CONSENSUS" "ProofOfConnection"
 loopconfig "debug" "main" "False"
 loopconfig "debug" "loop" "True"
 
-# run experiment with different update functions
-for UFC in "hello_index" "peer_index"; do
-	# set update function
-	loopconfig "scs" "lottery_update" "${UFC}"
+for AGT in $(seq 5 5 25); do 
+	# set number of robots
+	config "NUMROBOTS" "${AGT}"
 
 	# run experiment with increasing range of robots
-	for AGT in $(seq 5 5 25); do 
-		# set number of robots
-		config "NUMROBOTS" "${AGT}"
-		
-		#name of the configuration
-		CFG="${UFC}_${AGT}"
-		# run experiment
-		wait
-		run "${EXP}/${CFG}" $@
-
-	done
-done
-
-
-# DEFINE EXPERIMENT
-EXP=POC2_peer_vary_decay
-
-# standard values
-config "TPS" 10
-config "REPS" 10
-config "LENGTH" 400
-config "REP_SEED" "True"
-config "CONSENSUS" "ProofOfConnection"
-loopconfig "debug" "main" "False"
-loopconfig "debug" "loop" "True"
-
-for DEC in $(seq 10 10 100); do
-
-	# set update function
-	loopconfig "scs" "decay" "${DEC}"
-
-	# run experiment with increasing range of robots
-	for AGT in $(seq 5 5 25); do 
-		# set number of robots
-		config "NUMROBOTS" "${AGT}"
+	for DEC in $(seq 10 50 210); do
+		# set update function
+		loopconfig "scs" "decay" "${DEC}"
 
 		#name of the configuration
 		CFG="${DEC}_${AGT}"
