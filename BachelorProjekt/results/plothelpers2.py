@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Set, Callable
 import os
 import math
+import pickle
 
 try:
     import ipywidgets as widgets
@@ -15,6 +16,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import ticker
+
+SAVED_DIR = Path("/home/dodo/experiment_picker_saves")
 
 
 class ExperimentPicker:
@@ -86,6 +89,21 @@ class ExperimentPicker:
             button_style="primary",
             disabled=False,
         )
+        self._fast_load_exps = _list_saved_experiments()
+        self.fast_load_dropdown = None
+        self.fast_load_button = None
+        self.fast_load_container = None
+        if self._fast_load_exps:
+            self.fast_load_dropdown = widgets.Dropdown(
+                options=self._fast_load_exps,
+                description='Fast load:',
+            )
+            self.fast_load_button = widgets.Button(
+                description='Fast load',
+                button_style='info',
+            )
+            self.fast_load_button.on_click(self._on_fast_load_clicked)
+            self.fast_load_container = widgets.HBox([self.fast_load_dropdown, self.fast_load_button])
         self.output = widgets.Output()
 
         # Events
@@ -93,13 +111,17 @@ class ExperimentPicker:
         self.mode_toggle.observe(self._on_mode_changed, names='value')
 
         # Top-level UI
-        self.ui = widgets.VBox([
+        ui_children = [
             widgets.Label(f"Data folder: {self.data_dir}"),
             self.mode_toggle,
             self._single_exp_container,
             self.load_button,
-            self.output,
-        ])
+        ]
+        if self.fast_load_container is not None:
+            ui_children.append(self.fast_load_container)
+        ui_children.append(self.output)
+
+        self.ui = widgets.VBox(ui_children)
         
         self.last_loaded: Optional[List[Dict]] = None
 
@@ -398,6 +420,27 @@ class ExperimentPicker:
             pass
         display(self.ui)
 
+    def _on_fast_load_clicked(self, _):
+        if not self.fast_load_dropdown:
+            return
+        exp_key = self.fast_load_dropdown.value
+        bundle = _load_experiment_bundle(exp_key)
+        if not bundle:
+            with self.output:
+                self.output.clear_output()
+                print(f"No saved data found for {exp_key} in {SAVED_DIR}")
+            return
+
+        globals()['loaded_data'] = bundle.get('loaded_data', {})
+        globals()['block_production_counts'] = bundle.get('block_production_counts', {})
+        globals()['selected_csv_map'] = bundle.get('selected_csv_map', {})
+
+        with self.output:
+            self.output.clear_output()
+            total_robots = sum(len(robots) for exp_data in globals()['loaded_data'].values() for robots in exp_data.values())
+            print(f"✓ Fast-loaded {exp_key} from {SAVED_DIR}")
+            print(f"  - {total_robots} robot datasets")
+
 
 # Convenience function for notebook
 def create_and_show_picker(data_dir: str | Path = "data") -> ExperimentPicker:
@@ -550,6 +593,34 @@ def get_main_chain(robots_dict: Dict) -> Optional[pd.DataFrame]:
 
 # Data loading and preview functions
 
+def _list_saved_experiments() -> List[str]:
+    if not SAVED_DIR.exists():
+        return []
+    return sorted([p.stem for p in SAVED_DIR.glob('*.pkl') if p.is_file()])
+
+
+def _get_experiment_subset(data: Dict, exp_key: str) -> Dict:
+    return {k: v for k, v in data.items() if k == exp_key or k.startswith(f"{exp_key}/")}
+
+
+def _save_experiment_bundle(exp_key: str, loaded: Dict, block_counts: Dict, selected_csv_map: Dict):
+    SAVED_DIR.mkdir(parents=True, exist_ok=True)
+    bundle = {
+        'loaded_data': _get_experiment_subset(loaded, exp_key),
+        'block_production_counts': _get_experiment_subset(block_counts, exp_key),
+        'selected_csv_map': {exp_key: selected_csv_map.get(exp_key)} if selected_csv_map else {},
+    }
+    with open(SAVED_DIR / f"{exp_key}.pkl", 'wb') as f:
+        pickle.dump(bundle, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def _load_experiment_bundle(exp_key: str) -> Optional[Dict]:
+    path = SAVED_DIR / f"{exp_key}.pkl"
+    if not path.exists():
+        return None
+    with open(path, 'rb') as f:
+        return pickle.load(f)
+
 def create_csv_picker_for_loaded_paths(picker, data_dir=None):
     """For each path in `picker.last_loaded` (each either `data/exp` or `data/exp/cfg`),
     find the first folder named '1' (recursively) and list CSV files found there. Show a
@@ -649,6 +720,26 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
     with out:
         print("No data loaded")
 
+    save_btn = widgets.Button(description='save data')
+    save_btn.layout.display = 'none'
+
+    def _save_data(_):
+        loaded = globals().get('loaded_data', {})
+        block_counts = globals().get('block_production_counts', {})
+        selected_csv_map = globals().get('selected_csv_map', {})
+        saved_any = False
+        for exp_key in radio_map.keys():
+            if _get_experiment_subset(loaded, exp_key):
+                _save_experiment_bundle(exp_key, loaded, block_counts, selected_csv_map)
+                saved_any = True
+        with out:
+            if saved_any:
+                print(f"✓ Saved data to {SAVED_DIR}")
+            else:
+                print("No data available to save.")
+
+    save_btn.on_click(_save_data)
+
     def _load_data(_):
         out.clear_output()
         with out:
@@ -734,6 +825,7 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
                     print(f"✓ Data loaded successfully!")
                     print(f"  - {total_robots} robot datasets")
                     print(f"  - {total_blocks:,} total blocks produced")
+                    save_btn.layout.display = 'block'
                 else:
                     print("❌ Error: No data was loaded. Please check your experiment selection and try again.")
         
@@ -745,7 +837,7 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
 
     btn = widgets.Button(description='Load data')
     btn.on_click(_load_data)
-    display(btn, out)
+    display(btn, save_btn, out)
 
     def get_selections():
         # Return a representative csv path per experiment (first probe_dir is used)
