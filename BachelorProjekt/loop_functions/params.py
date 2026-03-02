@@ -43,10 +43,11 @@ params['consensus']['class'] = str(os.environ["CONSENSUS"])
 params['scs'] = dict()
 params['scs']['files'] = str(os.environ["SCNAME"])
 params['scs']['trans_reward'] = 1
-params['scs']['decay'] = 50
-params['scs']['update'] = 'hello_index'
+params['scs']['decay'] = 260
+params['scs']['update'] = "peer_index"
 
 # debug parameters
 params['debug'] = dict()
 params['debug']['main'] = False
 params['debug']['loop'] = True
+params['debug']['sc'] = False

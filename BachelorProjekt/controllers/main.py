@@ -387,9 +387,23 @@ def destroy():
         logs['block'] = None
 
     name   = 'sc.csv'
-    header = ['N', 'PRIVATE', 'BALANCES'] 
+    
+    if lp['debug']['sc']:
+        # Dynamically generate header from the genesis block's state attributes
+        try:
+            sc_header = list(GENESIS.state.__dict__.keys())
+        except Exception:
+            robot.log.warning(f"Failed to generate dynamic header for sc log for robot {robotID}, using fallback header")
+            sc_header = ['n', 'private', 'balances']  # fallback
+    # default header for PoC
+    elif ConsensusClass.__name__ == "ProofOfConnection":
+        sc_header = ['n', 'private', 'balances', 'connectivity'] 
+    # default header for PoS and PoA
+    else:
+        sc_header = ['n', 'private', 'balances']
+    
     try:
-        logs['sc'] = Logger(f"{logdir}/{name}", header, ID = robotID)
+        logs['sc'] = Logger(f"{logdir}/{name}", sc_header, ID = robotID)
     except Exception as e:
         robot.log.exception(f"Failed to open sc log for robot {robotID}: {e}")
         logs['sc'] = None
@@ -417,13 +431,12 @@ def destroy():
 
             if logs.get('sc'):
                 try:
-                    logs['sc'].log(
-                        [block.state.n,                                   # N
-                         block.state.private if hasattr(block.state, 'private') else {},  # PRIVATE
-                         block.state.balances,                            # BALANCES
-                        ])
+                    # Dynamically get values from state attributes matching the header
+                    sc_values = [getattr(block.state, attr, None) for attr in sc_header]
+                    logs['sc'].log(sc_values)
                 except Exception as e:
                     robot.log.exception(f"Failed to write to sc log for robot {robotID}: {e}")
+                    
     except Exception as e:
         robot.log.exception(f"Failed while iterating chain for robot {robotID}: {e}")
     finally:

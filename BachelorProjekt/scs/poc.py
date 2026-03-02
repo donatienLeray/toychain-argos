@@ -138,7 +138,7 @@ class Contract(StateMixin):
         # Iterate through all robots that have received hello messages
         for i in self.all_hellos.keys():
             # Generate the enode identifier for this robot
-            enode = gen_enode(i)
+            enode = gen_enode(int(i))
             
             # Count valid hello messages within the decay period
             valid_hellos = len([e for e in self.all_hellos[i] if e[1] > timestamp - self.decay])
@@ -160,7 +160,7 @@ class Contract(StateMixin):
         # For each robot that has peer records
         for robot_id in self.all_peers.keys():
             # Generate the enode identifier for this robot
-            enode = gen_enode(robot_id)
+            enode = gen_enode(int(robot_id))
             
             # Count unique peers who have this robot as a peer (within decay period)
             # Check all robots to see if they list this robot_id as a peer
