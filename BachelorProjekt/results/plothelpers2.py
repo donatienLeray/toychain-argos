@@ -1823,3 +1823,132 @@ def show_efficiency_boxplot():
         ylim=(0, 100),
         no_data_message="No efficiency data found. Ensure CSVs contain HEIGHT column and block production data is available."
     )
+
+
+def show_block_production_by_robot():
+    """Stacked bar chart showing each robot's share of all produced blocks.
+    Blue bars show the share that ended on main chain, red bars show orphan share."""
+
+    if 'loaded_data' not in globals() or not globals().get('loaded_data'):
+        print("No `loaded_data` available. Use the picker and click Load data first.")
+        return
+
+    loaded_data = globals().get('loaded_data', {})
+    exp_choices = sorted(loaded_data.keys())
+    single_exp_mode, split_config_mode, consensus_drop, agents_drop, config_mapping, _ = _parse_config_names(exp_choices)
+
+    def _compute_robot_blocks(exp_key):
+        """Compute blocks on main chain and total blocks per robot."""
+        robot_blocks = {}  # robot_id -> {'total': N, 'on_chain': M}
+
+        for rep, robots_dict in loaded_data.get(exp_key, {}).items():
+            main_chain_df = get_main_chain(robots_dict)
+            if main_chain_df is None:
+                continue
+
+            main_chain_hashes = set(main_chain_df['HASH'].unique()) if 'HASH' in main_chain_df.columns else set()
+
+            for robot_id, df in robots_dict.items():
+                if not isinstance(df, pd.DataFrame) or 'HASH' not in df.columns:
+                    continue
+
+                if robot_id not in robot_blocks:
+                    robot_blocks[robot_id] = {'total': 0, 'on_chain': 0}
+
+                unique_hashes = df['HASH'].unique()
+                robot_blocks[robot_id]['total'] += len(unique_hashes)
+                robot_blocks[robot_id]['on_chain'] += sum(1 for h in unique_hashes if h in main_chain_hashes)
+
+        return robot_blocks
+
+    if split_config_mode:
+        preview_out = widgets.Output()
+        btn = widgets.Button(description='Show Block Production by Robot', button_style='primary')
+
+        def _on_button_click(_):
+            with preview_out:
+                preview_out.clear_output()
+                robot_data_by_consensus = {}
+
+                consensus_types = list(consensus_drop.options)
+                for consensus in consensus_types:
+                    exp_key = config_mapping.get((consensus, agents_drop.value))
+                    if not exp_key:
+                        continue
+                    robot_blocks = _compute_robot_blocks(exp_key)
+                    if robot_blocks:
+                        robot_data_by_consensus[consensus] = robot_blocks
+
+                if not robot_data_by_consensus:
+                    print("No block data found for the selected agent count.")
+                    return
+
+                # Shared y-axis max across all consensus plots:
+                # use the largest robot share (%) of all produced blocks.
+                global_y_max = 0.0
+                for robot_blocks in robot_data_by_consensus.values():
+                    total_blocks_all_robots = sum(v['total'] for v in robot_blocks.values())
+                    if total_blocks_all_robots <= 0:
+                        continue
+                    for rid in robot_blocks:
+                        stacked_height = (robot_blocks[rid]['total'] / total_blocks_all_robots) * 100.0
+                        if stacked_height > global_y_max:
+                            global_y_max = stacked_height
+                if global_y_max <= 0:
+                    global_y_max = 1.0
+
+                n_consensus = len(robot_data_by_consensus)
+                ncols = min(3, n_consensus)
+                nrows = math.ceil(n_consensus / ncols)
+                fig, axes = plt.subplots(nrows, ncols, figsize=(14, 4 * nrows), squeeze=False)
+
+                for idx, (consensus, robot_blocks) in enumerate(sorted(robot_data_by_consensus.items())):
+                    ax = axes[idx // ncols][idx % ncols]
+
+                    robot_ids = sorted(
+                        robot_blocks.keys(),
+                        key=lambda rid: (robot_blocks[rid]['on_chain'], robot_blocks[rid]['total']),
+                        reverse=True,
+                    )
+                    total_blocks_all_robots = sum(v['total'] for v in robot_blocks.values())
+                    on_chain_pcts = []
+                    off_chain_pcts = []
+
+                    for rid in robot_ids:
+                        total = robot_blocks[rid]['total']
+                        on_chain = robot_blocks[rid]['on_chain']
+                        if total_blocks_all_robots > 0:
+                            on_chain_pcts.append((on_chain / total_blocks_all_robots) * 100)
+                            off_chain_pcts.append(((total - on_chain) / total_blocks_all_robots) * 100)
+                        else:
+                            on_chain_pcts.append(0)
+                            off_chain_pcts.append(0)
+
+                    x = np.arange(len(robot_ids))
+                    width = 0.6
+
+                    ax.bar(x, on_chain_pcts, width, label='Main Chain', color='blue', alpha=0.7)
+                    ax.bar(x, off_chain_pcts, width, bottom=on_chain_pcts, label='Orphans', color='red', alpha=0.7)
+
+                    ax.set_xlabel('Robot ID', fontsize=11)
+                    ax.set_ylabel('Share of all produced blocks (%)', fontsize=11)
+                    ax.set_title(f'{consensus}', fontsize=12)
+                    ax.set_xticks(x)
+                    ax.set_xticklabels(robot_ids)
+                    ax.set_ylim(0, global_y_max)
+                    ax.legend(fontsize=9)
+                    ax.grid(axis='y', linestyle='--', color='gray', alpha=0.3, zorder=1)
+
+                for idx in range(n_consensus, nrows * ncols):
+                    axes[idx // ncols][idx % ncols].set_visible(False)
+
+                fig.suptitle(f'Block Production by Robot (Agents: {agents_drop.value})', fontsize=13)
+                plt.tight_layout()
+                plt.show()
+
+        btn.on_click(_on_button_click)
+        display(widgets.VBox([widgets.HBox([agents_drop, btn]), preview_out]))
+        return
+
+    # Fallback for non-split-config mode
+    print("Not supported for this experiment format. Use experiments with consensus_number pattern.")
