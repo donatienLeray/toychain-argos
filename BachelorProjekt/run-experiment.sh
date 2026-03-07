@@ -187,29 +187,30 @@ run() {
 
 #
 # DEFINE EXPERIMENT
-#EXP=POC2
-#
-## standard values
-#config "TPS" 10
-#config "REPS" 10
-#config "LENGTH" 400
-#config "REP_SEED" "True"
-#config "CONSENSUS" "ProofOfConnection"
-#loopconfig "debug" "main" "False"
-#loopconfig "debug" "loop" "True"
-#loopconfig "scs" "lottery_update" "peer_index"
-#
-## run experiment with increasing range of robots
-#for AGT in $(seq 5 5 25); do 
-#	# set number of robots
-#	config "NUMROBOTS" "${AGT}"	
-#	#name of the configuration
-#	CFG="ProofOfConnection_${AGT}"
-#	# run experiment
-#	wait
-#	run "${EXP}/${CFG}" $@
-#
-#done
+EXP=POC2
+
+# standard values
+config "TPS" 10
+config "REPS" 10
+config "LENGTH" 400
+config "REP_SEED" "True"
+config "CONSENSUS" "ProofOfConnection"
+loopconfig "debug" "main" "False"
+loopconfig "debug" "loop" "True"
+loopconfig "scs" "update" "\"peer_index\""
+loopconfig "scs" "decay" 200
+
+# run experiment with increasing range of robots
+for AGT in $(seq 5 5 25); do 
+	# set number of robots
+	config "NUMROBOTS" "${AGT}"	
+	#name of the configuration
+	CFG="ProofOfConnection2_${AGT}"
+	# run experiment
+	wait
+	run "${EXP}/${CFG}" $@
+
+done
 
 
 # DEFINE EXPERIMENT
@@ -229,7 +230,7 @@ for AGT in $(seq 5 5 25); do
 	config "NUMROBOTS" "${AGT}"
 
 	# run experiment with increasing range of robots
-	for DEC in $(seq 10 50 210); do
+	for DEC in $(seq 50 50 250); do
 		# set update function
 		loopconfig "scs" "decay" "${DEC}"
 

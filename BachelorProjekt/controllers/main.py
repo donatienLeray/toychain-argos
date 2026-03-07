@@ -213,17 +213,19 @@ def controlstep():
         for enode in erb_enodes-set(w3.peers):
             try:
                 w3.add_peer(enode)
+                changed = True
             except Exception as e:
                 raise e
-            changed = True
+            
             
         # Remove peers from the toychain
         for enode in set(w3.peers)-erb_enodes:
             try:
                 w3.remove_peer(enode)
+                changed = True
             except Exception as e:
                 raise e
-            changed = True
+            
             
         if ConsensusClass.__name__ == "ProofOfConnection" and changed:
             # When peers change, record them in the smart contract
@@ -379,7 +381,7 @@ def destroy():
         robot.log.exception(f"Failed to create log dir {logdir}: {e}")
 
     name   = 'block.csv'
-    header = ['HEIGHT', 'BLOCK', 'TIMESTAMP', 'TELAPSED', 'RECEPTION', 'SIZE_KB', 'TXS', 'DIFF', 'TDIFF', 'HASH', 'PHASH']
+    header = ['HEIGHT', 'MINER', 'BLOCK', 'TIMESTAMP', 'TELAPSED', 'RECEPTION', 'SIZE_KB', 'TXS', 'DIFF', 'TDIFF', 'HASH', 'PHASH']
     try:
         logs['block'] = Logger(f"{logdir}/{name}", header, ID = robotID)
     except Exception as e:
@@ -415,6 +417,7 @@ def destroy():
                 try:
                     logs['block'].log(
                         [block.height,                           # HEIGHT
+                         block.miner_id,                         # MINER
                          block.number,                           # BLOCK
                          block.timestamp,                        # TIMESTAMP
                          0 if block.reception == 0 else block.reception - block.timestamp,      # TELAPSED

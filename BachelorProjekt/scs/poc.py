@@ -1,6 +1,6 @@
 # Import necessary modules for smart contract implementation
 from toychain.src.State import StateMixin
-from toychain.src.utils.helpers import gen_enode
+from toychain.src.utils.helpers import gen_enode, enode_to_id
 from loop_functions.params import params as lp
 import logging
 import warnings
@@ -47,7 +47,7 @@ class Contract(StateMixin):
                 
             # Initialize connectivity tracking and transaction rewards
             self.all_hellos  = {}
-            self.all_peers   = {}  # Track peer relationships: {robot_id: [(peer_id, timestamp), ...]}
+            self.all_peers   = {str(i+1): {} for i in range(int(lp['generic']['num_robots'])) }  # Track peer relationships: {robot_id: [(peer_id, timestamp), ...]}
             self.connectivity = {gen_enode(i+1): 0 for i in range(int(lp['generic']['num_robots'])) }
             self.trans_reward = int(lp['scs']['trans_reward'])
             self.decay = int(lp['scs']['decay'])
@@ -82,10 +82,10 @@ class Contract(StateMixin):
         sender_id = self.msg.sender
         
         # Initialize peer list for this sender if it doesn't exist
-        self.all_peers.setdefault(sender_id, [])
+        self.all_peers.setdefault(sender_id, {})
         
-        # Record the peer connection with timestamp
-        self.all_peers[sender_id].append((peer_id, self.msg.timestamp))
+        # Record the timestamp of this peer connection for the sender
+        self.all_peers[sender_id][str(peer_id)] = self.msg.timestamp
         
         # Log the peer connection event
         logger.info(f"Robot {sender_id} recorded peer {peer_id}")
@@ -157,25 +157,23 @@ class Contract(StateMixin):
         # Get the timestamp from the block
         timestamp = block.timestamp
         
-        # For each robot that has peer records
-        for robot_id in self.all_peers.keys():
-            # Generate the enode identifier for this robot
+        # For each robot
+        for robot_id, peers in self.all_peers.items():
+            counter = 0
+            # For each peer check ...
+            for peer_id, ts in peers.items():
+                # ... that the peer connection is within the decay period and not a self-connection
+                if peer_id != robot_id and ts > timestamp - self.decay:
+                    # see if connection is reciprocal by checking if this robot is in the peer's list of peers
+                    if self.all_peers.get(peer_id, {}).get(robot_id, -self.decay) > timestamp - self.decay:
+                        counter += 1
+                        
+            # update connectivity value with the count of reciprocal connections
             enode = gen_enode(int(robot_id))
+            self.connectivity[enode] = counter
+    
             
-            # Count unique peers who have this robot as a peer (within decay period)
-            # Check all robots to see if they list this robot_id as a peer
-            reciprocal_peers = set()
             
-            for other_robot_id, peer_list in self.all_peers.items():
-                if other_robot_id != robot_id:
-                    # Check if this robot is in the other robot's peer list within decay window
-                    for peer_id, peer_timestamp in peer_list:
-                        if peer_id == robot_id and peer_timestamp > timestamp - self.decay:
-                            reciprocal_peers.add(other_robot_id)
-                            break  # Count each peer only once
-            
-            # Update the connectivity value (count of reciprocal peers)
-            self.connectivity[enode] = len(reciprocal_peers)
     
     def none(self):
         """
