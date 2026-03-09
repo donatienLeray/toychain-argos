@@ -203,17 +203,22 @@ def controlstep():
     ###########################
 
     def peering():
-        
-        changed = False
 
         # Get the current peers from erb if they have higher difficulty chain
         erb_enodes = {w3.gen_enode(peer.id) for peer in erb.peers if peer.getData(indices=[1,2]) > w3.get_total_difficulty() or peer.data[3] != w3.mempool_hash(astype='int')}
-
+        
+        # If using ProofOfConnection, update the smart contract with peer changes
+        if ConsensusClass.__name__ == "ProofOfConnection" and lp['scs']['update'] != "none":
+            # record Peers in the smart contract
+            for peer in erb.peers:
+                txdata = {'function': 'AddPeer', 'inputs': [peer.id]}
+                tx = Transaction(sender = me.id, data = txdata, timestamp = w3.custom_timer.time())
+                w3.send_transaction(tx)
+                
         # Add peers on the toychain
         for enode in erb_enodes-set(w3.peers):
             try:
                 w3.add_peer(enode)
-                changed = True
             except Exception as e:
                 raise e
             
@@ -222,18 +227,11 @@ def controlstep():
         for enode in set(w3.peers)-erb_enodes:
             try:
                 w3.remove_peer(enode)
-                changed = True
             except Exception as e:
                 raise e
             
             
-        if ConsensusClass.__name__ == "ProofOfConnection" and changed:
-            # When peers change, record them in the smart contract
-            for peer in w3.peers:
-                txdata = {'function': 'AddPeer', 'inputs': [enode_to_id(peer)]}
-                tx = Transaction(sender = me.id, data = txdata, timestamp = w3.custom_timer.time())
-                w3.send_transaction(tx)
-            changed = False
+
 
         # Turn on LEDs according to geth peer count
         rgb.setLED(rgb.all, rgb.presets.get(len(w3.peers), 3*['red']))
@@ -398,7 +396,7 @@ def destroy():
             robot.log.warning(f"Failed to generate dynamic header for sc log for robot {robotID}, using fallback header")
             sc_header = ['n', 'private', 'balances']  # fallback
     # default header for PoC
-    elif ConsensusClass.__name__ == "ProofOfConnection":
+    elif ConsensusClass.__name__ in ("ProofOfConnection","ProofOfStake"):
         sc_header = ['n', 'private', 'balances', 'connectivity'] 
     # default header for PoS and PoA
     else:
