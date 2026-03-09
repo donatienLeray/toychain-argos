@@ -3,6 +3,7 @@ from typing import List, Dict, Optional, Tuple, Set, Callable
 import os
 import math
 import pickle
+import re
 
 try:
     import ipywidgets as widgets
@@ -433,6 +434,7 @@ class ExperimentPicker:
 
         globals()['loaded_data'] = bundle.get('loaded_data', {})
         globals()['block_production_counts'] = bundle.get('block_production_counts', {})
+        globals()['block_produced_hash'] = bundle.get('block_produced_hash', {})
         globals()['selected_csv_map'] = bundle.get('selected_csv_map', {})
 
         with self.output:
@@ -603,11 +605,12 @@ def _get_experiment_subset(data: Dict, exp_key: str) -> Dict:
     return {k: v for k, v in data.items() if k == exp_key or k.startswith(f"{exp_key}/")}
 
 
-def _save_experiment_bundle(exp_key: str, loaded: Dict, block_counts: Dict, selected_csv_map: Dict):
+def _save_experiment_bundle(exp_key: str, loaded: Dict, block_counts: Dict, block_hashes: Dict, selected_csv_map: Dict):
     SAVED_DIR.mkdir(parents=True, exist_ok=True)
     bundle = {
         'loaded_data': _get_experiment_subset(loaded, exp_key),
         'block_production_counts': _get_experiment_subset(block_counts, exp_key),
+        'block_produced_hash': _get_experiment_subset(block_hashes, exp_key),
         'selected_csv_map': {exp_key: selected_csv_map.get(exp_key)} if selected_csv_map else {},
     }
     with open(SAVED_DIR / f"{exp_key}.pkl", 'wb') as f:
@@ -726,11 +729,12 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
     def _save_data(_):
         loaded = globals().get('loaded_data', {})
         block_counts = globals().get('block_production_counts', {})
+        block_hashes = globals().get('block_produced_hash', {})
         selected_csv_map = globals().get('selected_csv_map', {})
         saved_any = False
         for exp_key in radio_map.keys():
             if _get_experiment_subset(loaded, exp_key):
-                _save_experiment_bundle(exp_key, loaded, block_counts, selected_csv_map)
+                _save_experiment_bundle(exp_key, loaded, block_counts, block_hashes, selected_csv_map)
                 saved_any = True
         with out:
             if saved_any:
@@ -748,6 +752,7 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
         try:
             loaded = {}
             block_production_counts = {}
+            block_produced_hash = {}
             # Record the chosen csv basename per experiment so other helpers can know which was chosen
             selected_csv_map = {}
 
@@ -781,6 +786,7 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
                     for base_key in sorted(keys):
                         run_dict = loaded.setdefault(base_key, {}).setdefault(run.name, {})
                         count_dict = block_production_counts.setdefault(base_key, {}).setdefault(run.name, {})
+                        hash_dict = block_produced_hash.setdefault(base_key, {}).setdefault(run.name, {})
                         # robot dirs inside run — numeric names starting at 1; exclude '0'
                         robots = sorted([d for d in run.iterdir() if d.is_dir() and d.name.isdigit() and int(d.name) != 0], key=lambda p: int(p.name))
                         if not robots:
@@ -804,17 +810,26 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
                             log_path = robot / 'monitor.log'
                             if log_path.exists():
                                 try:
+                                    produced_hashes = []
                                     with open(log_path, 'r') as f:
-                                        count = sum(1 for line in f if 'Block produced' in line)
-                                    count_dict[robot_key] = count
+                                        for line in f:
+                                            if '##' in line and 'BH: ' in line:
+                                                m = re.search(r'BH:\s*([0-9a-fA-F]{5})', line)
+                                                if m:
+                                                    produced_hashes.append(m.group(1))
+                                    count_dict[robot_key] = len(produced_hashes)
+                                    hash_dict[robot_key] = produced_hashes
                                 except Exception:
                                     count_dict[robot_key] = 0
+                                    hash_dict[robot_key] = []
                             else:
                                 count_dict[robot_key] = 0
+                                hash_dict[robot_key] = []
 
             # Save global variables
             globals()['loaded_data'] = loaded
             globals()['block_production_counts'] = block_production_counts
+            globals()['block_produced_hash'] = block_produced_hash
             globals()['selected_csv_map'] = selected_csv_map
             
             out.clear_output()
@@ -1242,9 +1257,8 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None)
                     return
 
                 bin_width = 10
-                max_val = max(max(vals) for vals in intervals_by_consensus.values())
-                max_bin = int(np.ceil(max_val / bin_width)) * bin_width
-                bin_edges = np.arange(bin_width, max_bin + bin_width, bin_width)
+                max_bin = 250  # 25 seconds (10 timesteps = 1 second)
+                bin_edges = np.arange(0, max_bin + bin_width, bin_width)
                 bin_centers = (bin_edges[:-1] + bin_width / 2) / 10
                 bin_width_sec = bin_width / 10
 
@@ -1257,6 +1271,7 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None)
                     ax = axes[idx // ncols][idx % ncols]
                     data_to_plot = pd.Series(intervals).dropna()
                     data_to_plot = data_to_plot[data_to_plot > 0].values
+                    data_to_plot = data_to_plot[data_to_plot <= max_bin]
 
                     if len(data_to_plot) == 0:
                         ax.set_visible(False)
@@ -1277,14 +1292,13 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None)
                             ax.plot([right_edge, right_edge], [0, 100], 'k--', linewidth=1, zorder=2, alpha=0.5)
 
                     ax.grid(axis='y', linestyle='--', color='gray', alpha=0.3, zorder=1)
-                    ax.set_xscale('log')
                     ax.set_ylim(ymin=0, ymax=100)
-                    ax.set_xlim(xmin=bin_centers.min(), xmax=max(bin_centers) + bin_width_sec / 2)
+                    ax.set_xlim(xmin=0, xmax=25)
                     ax.set_title(consensus)
                     ax.set_xlabel(xlabel if xlabel is not None else 'Block Reception Interval [s]', fontsize=11)
                     ax.set_ylabel(ylabel, fontsize=11)
                     ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=100, decimals=0))
-                    ax.text(max(bin_centers) * 0.95, cumsum_pct.max() * 0.2,
+                    ax.text(24.5, cumsum_pct.max() * 0.2,
                             f'n={len(data_to_plot):,} intervals', ha='right', fontsize=9,
                             zorder=4, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
@@ -1354,9 +1368,12 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None)
             
             # Fixed 1-second bins (10 timesteps)
             bin_width = 10
-            max_val = data_to_plot.max()
-            max_bin = int(np.ceil(max_val / bin_width)) * bin_width
-            bin_edges = np.arange(bin_width, max_bin + bin_width, bin_width)
+            max_bin = 250  # 25 seconds (10 timesteps = 1 second)
+            data_to_plot = data_to_plot[data_to_plot <= max_bin]
+            if len(data_to_plot) == 0:
+                print(f'No valid RECEPTION-TIMESTAMP data <= 25s found for {exp}')
+                return
+            bin_edges = np.arange(0, max_bin + bin_width, bin_width)
             
             # Count occurrences in each bin
             hist, _ = np.histogram(data_to_plot, bins=bin_edges)
@@ -1387,13 +1404,12 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None)
             
             # Add text annotation with sample count
             n_samples = len(data_to_plot)
-            ax.text(max(bin_centers) * 0.95, cumsum_pct.max() * 0.2,
+            ax.text(24.5, cumsum_pct.max() * 0.2,
                 f'n={n_samples:,} receptions', ha='right', fontsize=10,
                 zorder=4, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-            
-            ax.set_xscale('log')
+
             ax.set_ylim(ymin=0, ymax=100)
-            ax.set_xlim(xmin=bin_centers.min(), xmax=max(bin_centers) + bin_width_sec / 2)
+            ax.set_xlim(xmin=0, xmax=25)
             
             ax.set_xlabel(xlabel if xlabel is not None else 'Block  Reception Time [s]', fontsize=11)
             ax.set_ylabel(ylabel, fontsize=11)
@@ -1832,38 +1848,135 @@ def show_block_production_by_robot():
     if 'loaded_data' not in globals() or not globals().get('loaded_data'):
         print("No `loaded_data` available. Use the picker and click Load data first.")
         return
+    if 'block_production_counts' not in globals() or not globals().get('block_production_counts'):
+        print("No `block_production_counts` available. Load data first using the CSV picker.")
+        return
 
     loaded_data = globals().get('loaded_data', {})
+    block_counts = globals().get('block_production_counts', {})
+    block_hashes = globals().get('block_produced_hash', {})
     exp_choices = sorted(loaded_data.keys())
     single_exp_mode, split_config_mode, consensus_drop, agents_drop, config_mapping, _ = _parse_config_names(exp_choices)
 
-    def _compute_robot_blocks(exp_key):
-        """Compute blocks on main chain and total blocks per robot."""
-        robot_blocks = {}  # robot_id -> {'total': N, 'on_chain': M}
+    def _parse_producer_id(miner_val):
+        if pd.isna(miner_val):
+            return None
+        s = str(miner_val)
+        if s.isdigit():
+            return int(s)
+        if s.startswith('enode://') and '@' in s:
+            token = s.split('enode://', 1)[1].split('@', 1)[0]
+            if token.isdigit():
+                return int(token)
+            return token
+        return s
 
-        for rep, robots_dict in loaded_data.get(exp_key, {}).items():
-            main_chain_df = get_main_chain(robots_dict)
-            if main_chain_df is None:
+    def _compute_on_chain_counts_for_run(exp_key, rep_name, robots_dict):
+        """Count, per producer, how many blocks they produced on the main chain in one run.
+
+        Assumes get_main_chain() returns a chain with unique blocks.
+        """
+        on_chain_counts = {}
+
+        main_chain_df = get_main_chain(robots_dict)
+        if main_chain_df is None:
+            return on_chain_counts
+
+        if 'MINER' not in main_chain_df.columns:
+            # Fallback: use produced hash prefixes from block_produced_hash
+            if 'HASH' not in main_chain_df.columns:
+                return on_chain_counts
+
+            main_chain_prefixes = set(
+                str(h).strip().lower()[:5]
+                for h in main_chain_df['HASH'].dropna().values
+                if str(h).strip()
+            )
+            produced_by_robot = block_hashes.get(exp_key, {}).get(rep_name, {})
+            for robot_id, produced_prefixes in produced_by_robot.items():
+                matches = 0
+                for p in produced_prefixes:
+                    prefix = str(p).strip().lower()[:5]
+                    if prefix and prefix in main_chain_prefixes:
+                        matches += 1
+                if matches > 0:
+                    on_chain_counts[robot_id] = on_chain_counts.get(robot_id, 0) + matches
+            return on_chain_counts
+
+        # Count miners from main chain, skipping the first block (genesis block)
+        for miner in main_chain_df['MINER'].dropna().values[1:]:
+            producer = _parse_producer_id(miner)
+            if producer is None:
                 continue
+            on_chain_counts[producer] = on_chain_counts.get(producer, 0) + 1
 
-            main_chain_hashes = set(main_chain_df['HASH'].unique()) if 'HASH' in main_chain_df.columns else set()
+        return on_chain_counts
 
-            for robot_id, df in robots_dict.items():
-                if not isinstance(df, pd.DataFrame) or 'HASH' not in df.columns:
-                    continue
+    def _compute_robot_blocks_for_run(exp_key, rep_name, robots_dict):
+        """Compute per-producer totals from block_production_counts and main-chain counts from chain data."""
+        robot_blocks = {}
 
-                if robot_id not in robot_blocks:
-                    robot_blocks[robot_id] = {'total': 0, 'on_chain': 0}
+        total_counts = block_counts.get(exp_key, {}).get(rep_name, {})
+        on_chain_counts = _compute_on_chain_counts_for_run(exp_key, rep_name, robots_dict)
 
-                unique_hashes = df['HASH'].unique()
-                robot_blocks[robot_id]['total'] += len(unique_hashes)
-                robot_blocks[robot_id]['on_chain'] += sum(1 for h in unique_hashes if h in main_chain_hashes)
+        producer_ids = set(total_counts.keys()) | set(on_chain_counts.keys())
+        for producer_id in producer_ids:
+            total = int(total_counts.get(producer_id, 0))
+            on_chain = int(on_chain_counts.get(producer_id, 0))
+            # Guard against inconsistent data
+            if on_chain > total:
+                total = on_chain
+            robot_blocks[producer_id] = {'total': total, 'on_chain': on_chain}
 
         return robot_blocks
 
+    def _compute_robot_blocks(exp_key, rep_sel='All'):
+        """Compute blocks for a specific run or aggregate all runs by producer rank."""
+        if rep_sel != 'All':
+            robots_dict = loaded_data.get(exp_key, {}).get(rep_sel, {})
+            return _compute_robot_blocks_for_run(exp_key, rep_sel, robots_dict)
+
+        # All runs: rank robots within each run by produced blocks and aggregate by rank.
+        # rank 1 = top producer of the run, rank 2 = second producer, etc.
+        rank_blocks = {}  # rank(int) -> {'total': N, 'on_chain': M}
+        for rep_name, robots_dict in loaded_data.get(exp_key, {}).items():
+            run_blocks = _compute_robot_blocks_for_run(exp_key, rep_name, robots_dict)
+            if not run_blocks:
+                continue
+
+            ranked = sorted(
+                run_blocks.items(),
+                key=lambda kv: (kv[1]['total'], kv[1]['on_chain']),
+                reverse=True,
+            )
+            for rank_idx, (_, counts) in enumerate(ranked, start=1):
+                if rank_idx not in rank_blocks:
+                    rank_blocks[rank_idx] = {'total': 0, 'on_chain': 0}
+                rank_blocks[rank_idx]['total'] += counts['total']
+                rank_blocks[rank_idx]['on_chain'] += counts['on_chain']
+
+        return rank_blocks
+
     if split_config_mode:
         preview_out = widgets.Output()
+        rep_drop = widgets.Dropdown(options=['All'], description='Rep:', value='All')
         btn = widgets.Button(description='Show Block Production by Robot', button_style='primary')
+
+        def _update_rep_options(*_):
+            reps = set()
+            for consensus in list(consensus_drop.options):
+                exp_key = config_mapping.get((consensus, agents_drop.value))
+                if not exp_key:
+                    continue
+                reps.update(loaded_data.get(exp_key, {}).keys())
+
+            sorted_reps = sorted(reps)
+            current = rep_drop.value
+            rep_drop.options = ['All'] + sorted_reps
+            rep_drop.value = current if current in rep_drop.options else 'All'
+
+        agents_drop.observe(_update_rep_options, names='value')
+        _update_rep_options()
 
         def _on_button_click(_):
             with preview_out:
@@ -1875,12 +1988,15 @@ def show_block_production_by_robot():
                     exp_key = config_mapping.get((consensus, agents_drop.value))
                     if not exp_key:
                         continue
-                    robot_blocks = _compute_robot_blocks(exp_key)
+                    robot_blocks = _compute_robot_blocks(exp_key, rep_drop.value)
                     if robot_blocks:
                         robot_data_by_consensus[consensus] = robot_blocks
 
                 if not robot_data_by_consensus:
-                    print("No block data found for the selected agent count.")
+                    if rep_drop.value == 'All':
+                        print("No block data found for the selected agent count.")
+                    else:
+                        print(f"No block data found for run {rep_drop.value} and selected agent count.")
                     return
 
                 # Shared y-axis max across all consensus plots:
@@ -1901,15 +2017,24 @@ def show_block_production_by_robot():
                 ncols = min(3, n_consensus)
                 nrows = math.ceil(n_consensus / ncols)
                 fig, axes = plt.subplots(nrows, ncols, figsize=(14, 4 * nrows), squeeze=False)
+                summary_rows = []
 
                 for idx, (consensus, robot_blocks) in enumerate(sorted(robot_data_by_consensus.items())):
                     ax = axes[idx // ncols][idx % ncols]
 
-                    robot_ids = sorted(
-                        robot_blocks.keys(),
-                        key=lambda rid: (robot_blocks[rid]['on_chain'], robot_blocks[rid]['total']),
-                        reverse=True,
-                    )
+                    if rep_drop.value == 'All':
+                        robot_ids = sorted(robot_blocks.keys())  # producer ranks
+                        x_label = 'Producer Rank'
+                        x_tick_labels = [str(r) for r in robot_ids]
+                    else:
+                        robot_ids = sorted(
+                            robot_blocks.keys(),
+                            key=lambda rid: (robot_blocks[rid]['on_chain'], robot_blocks[rid]['total']),
+                            reverse=True,
+                        )
+                        x_label = 'Robot ID'
+                        x_tick_labels = robot_ids
+
                     total_blocks_all_robots = sum(v['total'] for v in robot_blocks.values())
                     on_chain_pcts = []
                     off_chain_pcts = []
@@ -1917,6 +2042,18 @@ def show_block_production_by_robot():
                     for rid in robot_ids:
                         total = robot_blocks[rid]['total']
                         on_chain = robot_blocks[rid]['on_chain']
+                        off_chain = max(total - on_chain, 0)
+
+                        summary_rows.append({
+                            'Consensus': consensus,
+                            'Producer': rid,
+                            'Total': total,
+                            'Main Chain': on_chain,
+                            'Orphans': off_chain,
+                            'Main Chain % of Producer': (on_chain / total * 100.0) if total > 0 else 0.0,
+                            'Share of All Produced %': (total / total_blocks_all_robots * 100.0) if total_blocks_all_robots > 0 else 0.0,
+                        })
+
                         if total_blocks_all_robots > 0:
                             on_chain_pcts.append((on_chain / total_blocks_all_robots) * 100)
                             off_chain_pcts.append(((total - on_chain) / total_blocks_all_robots) * 100)
@@ -1930,11 +2067,11 @@ def show_block_production_by_robot():
                     ax.bar(x, on_chain_pcts, width, label='Main Chain', color='blue', alpha=0.7)
                     ax.bar(x, off_chain_pcts, width, bottom=on_chain_pcts, label='Orphans', color='red', alpha=0.7)
 
-                    ax.set_xlabel('Robot ID', fontsize=11)
+                    ax.set_xlabel(x_label, fontsize=11)
                     ax.set_ylabel('Share of all produced blocks (%)', fontsize=11)
                     ax.set_title(f'{consensus}', fontsize=12)
                     ax.set_xticks(x)
-                    ax.set_xticklabels(robot_ids)
+                    ax.set_xticklabels(x_tick_labels, fontsize=8)
                     ax.set_ylim(0, global_y_max)
                     ax.legend(fontsize=9)
                     ax.grid(axis='y', linestyle='--', color='gray', alpha=0.3, zorder=1)
@@ -1942,12 +2079,36 @@ def show_block_production_by_robot():
                 for idx in range(n_consensus, nrows * ncols):
                     axes[idx // ncols][idx % ncols].set_visible(False)
 
-                fig.suptitle(f'Block Production by Robot (Agents: {agents_drop.value})', fontsize=13)
+                run_label = 'All runs' if rep_drop.value == 'All' else f'Run {rep_drop.value}'
+                fig.suptitle(f'Block Production by Robot (Agents: {agents_drop.value}, {run_label})', fontsize=13)
                 plt.tight_layout()
                 plt.show()
 
+                if summary_rows:
+                    summary_df = pd.DataFrame(summary_rows)
+                    if rep_drop.value == 'All':
+                        summary_df = summary_df.rename(columns={'Producer': 'Producer Rank'})
+                        display_df = summary_df.sort_values(['Consensus', 'Producer Rank']).reset_index(drop=True)
+                    else:
+                        display_df = summary_df.sort_values(['Consensus', 'Main Chain', 'Total'], ascending=[True, False, False]).reset_index(drop=True)
+
+                    print("\nSummary Statistics (Block Production by Robot):")
+                    summary_totals = summary_df.groupby('Consensus')[['Total', 'Main Chain', 'Orphans']].sum()
+                    summary_totals['Main Chain %'] = np.where(
+                        summary_totals['Total'] > 0,
+                        (summary_totals['Main Chain'] / summary_totals['Total']) * 100.0,
+                        0.0,
+                    )
+                    summary_totals['Orphans %'] = np.where(
+                        summary_totals['Total'] > 0,
+                        (summary_totals['Orphans'] / summary_totals['Total']) * 100.0,
+                        0.0,
+                    )
+                    display(summary_totals)
+                    display(display_df)
+
         btn.on_click(_on_button_click)
-        display(widgets.VBox([widgets.HBox([agents_drop, btn]), preview_out]))
+        display(widgets.VBox([widgets.HBox([agents_drop, rep_drop, btn]), preview_out]))
         return
 
     # Fallback for non-split-config mode
