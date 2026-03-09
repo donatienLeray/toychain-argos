@@ -171,11 +171,10 @@ class Contract(StateMixin):
             # update connectivity value with the count of reciprocal connections
             enode = gen_enode(int(robot_id))
             self.connectivity[enode] = counter
-    
             
             
     
-    def none(self):
+    def none(self, block):
         """
         Placeholder method for a no-op update strategy.
         Used when no connectivity update is needed.

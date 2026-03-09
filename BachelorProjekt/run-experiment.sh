@@ -127,121 +127,145 @@ run() {
 }
 
 
-# DEFINE EXPERIMENT
-#EXP=vary_decay
-#config "TPS" 30
-#config "REPS" 1
-#config "LENGTH" 500
-#config "NOTES" "\"Variation of decay for hello_fixed_last lottery update from 50 to 500 \""
-#loopconfig "scs" "lottery_update" "'hello_fixed_last'"
-#
-#for UTIL in $(seq 50 50 100); do 
-#	CFG=${UTIL}
-#	loopconfig "scs" "decay" "${UTIL}"
-#	wait
-#	run "${EXP}/${CFG}" $@
-#done
-
-# DEFINE EXPERIMENT
-#EXP=vary_decay_on_poc
-#config "TPS" 30
-#config "REPS" 1
-#config "LENGTH" 500
-#config "NOTES" "\"Variation of decay for hello_fixed_last lottery update from 50 to 500 \""
-#loopconfig "scs" "lottery_update" "'hello_fixed_last'"
-#
-#for UTIL in $(seq 10 10 50); do 
-#	CFG=${UTIL}
-#	loopconfig "scs" "decay" "${UTIL}"
-#	wait
-#	run "${EXP}/${CFG}" $@
-#done
-
-
-#EXP=is_poc_really_good
-#
-## run experiment with different consensus mechanisms
-#for consensus in "ProofOfConnection"; do
-#
-#	# standard values
-#	config "TPS" 10
-#	config "REPS" 10
-#	config "LENGTH" 400
-#	config "REP_SEED" "True"
-#	config "CONSENSUS" "$consensus"
-#	loopconfig "debug" "main" "False"
-#	loopconfig "debug" "loop" "True"
-#
-#	# run experiment with increasing range of robots
-#	for UTIL in $(seq 5 5 25); do 
-#		#name of the configuration
-#		CFG=${consensus}_${UTIL}
-#		# set number of robots
-#		config "NUMROBOTS" "${UTIL}"
-#		# run experiment
-#		wait
-#		run "${EXP}/${CFG}" $@
-#	done
-#
-#done
-
-#
-# DEFINE EXPERIMENT
-EXP=POC2
+####################################################################
+# run experiment with different consensus mechanisms
+EXP=POC3
 
 # standard values
 config "TPS" 10
 config "REPS" 10
 config "LENGTH" 400
 config "REP_SEED" "True"
-config "CONSENSUS" "ProofOfConnection"
 loopconfig "debug" "main" "False"
 loopconfig "debug" "loop" "True"
+loopconfig "debug" "scs" "True"
+
+# POC #
+config "CONSENSUS" "ProofOfConnection"
 loopconfig "scs" "update" "\"peer_index\""
-loopconfig "scs" "decay" 200
 
 # run experiment with increasing range of robots
-for AGT in $(seq 5 5 25); do 
-	# set number of robots
-	config "NUMROBOTS" "${AGT}"	
+for UTIL in $(seq 5 5 25); do 
 	#name of the configuration
-	CFG="ProofOfConnection2_${AGT}"
+	CFG="Random_${UTIL}"
+	# set number of robots
+	config "NUMROBOTS" "${UTIL}"
 	# run experiment
 	wait
 	run "${EXP}/${CFG}" $@
-
 done
 
 
-# DEFINE EXPERIMENT
-EXP=POC_vary_decay
+# ####################################################################
+# # run experiment with different consensus mechanisms
+# EXP=compare_consensus
+# 
+# # standard values
+# config "TPS" 10
+# config "REPS" 10
+# config "LENGTH" 400
+# config "REP_SEED" "True"
+# loopconfig "debug" "main" "False"
+# loopconfig "debug" "loop" "True"
+# loopconfig "debug" "scs" "True"
+# 
+# 
+# ##########
+# # RANDOM #
+# ##########
+# config "CONSENSUS" "ProofOfConnection"
+# loopconfig "scs" "update" "\"none\""
+# 
+# # run experiment with increasing range of robots
+# for UTIL in $(seq 5 5 25); do 
+# 	#name of the configuration
+# 	CFG="Random_${UTIL}"
+# 	# set number of robots
+# 	config "NUMROBOTS" "${UTIL}"
+# 	# run experiment
+# 	wait
+# 	run "${EXP}/${CFG}" $@
+# done
+# 
+# ###############
+# # POA and PoW #
+# ###############
+# for consensus in "ProofOfAuthority" "ProofOfWork"; do
+#   	config "CONSENSUS" "$consensus"
+# 
+# 	# run experiment with increasing range of robots
+# 	for UTIL in $(seq 5 5 25); do 
+# 		#name of the configuration
+# 		CFG=${consensus}_${UTIL}
+# 		# set number of robots
+# 		config "NUMROBOTS" "${UTIL}"
+# 		# run experiment
+# 		wait
+# 		run "${EXP}/${CFG}" $@
+# 	done
+# 
+# done
 
-# standard values
-config "TPS" 10
-config "REPS" 10
-config "LENGTH" 400
-config "REP_SEED" "True"
-config "CONSENSUS" "ProofOfConnection"
-loopconfig "debug" "main" "False"
-loopconfig "debug" "loop" "True"
 
-for AGT in $(seq 5 5 25); do 
-	# set number of robots
-	config "NUMROBOTS" "${AGT}"
 
-	# run experiment with increasing range of robots
-	for DEC in $(seq 50 50 250); do
-		# set update function
-		loopconfig "scs" "decay" "${DEC}"
 
-		#name of the configuration
-		CFG="${DEC}_${AGT}"
-		# run experiment
-		wait
-		run "${EXP}/${CFG}" $@
+##
+## DEFINE EXPERIMENT
+#EXP=POC2
+#
+## standard values
+#config "TPS" 10
+#config "REPS" 10
+#config "LENGTH" 400
+#config "REP_SEED" "True"
+#config "CONSENSUS" "ProofOfConnection"
+#loopconfig "debug" "main" "False"
+#loopconfig "debug" "loop" "True"
+#loopconfig "scs" "update" "\"peer_index\""
+#loopconfig "scs" "decay" 200
+#
+## run experiment with increasing range of robots
+#for AGT in $(seq 5 5 25); do 
+#	# set number of robots
+#	config "NUMROBOTS" "${AGT}"	
+#	#name of the configuration
+#	CFG="ProofOfConnection2_${AGT}"
+#	# run experiment
+#	wait
+#	run "${EXP}/${CFG}" $@
+#
+#done
 
-	done
-done
+
+## DEFINE EXPERIMENT
+#EXP=POC_vary_decay
+#
+## standard values
+#config "TPS" 10
+#config "REPS" 10
+#config "LENGTH" 400
+#config "REP_SEED" "True"
+#config "CONSENSUS" "ProofOfConnection"
+#loopconfig "debug" "main" "False"
+#loopconfig "debug" "loop" "True"
+#
+#for AGT in $(seq 5 5 25); do 
+#	# set number of robots
+#	config "NUMROBOTS" "${AGT}"
+#
+#	# run experiment with increasing range of robots
+#	for DEC in $(seq 50 50 250); do
+#		# set update function
+#		loopconfig "scs" "decay" "${DEC}"
+#
+#		#name of the configuration
+#		CFG="${DEC}_${AGT}"
+#		# run experiment
+#		wait
+#		run "${EXP}/${CFG}" $@
+#
+#	done
+#done
 
 
 

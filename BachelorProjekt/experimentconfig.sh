@@ -39,7 +39,7 @@ export TPS=10
 export DENSITY="2"
 
 #export NUMROBOTS=$(echo $NUM1+$NUM2 | bc)
-export NUMROBOTS=25
+export NUMROBOTS=5
 export ARENADIM=$(echo "scale=3 ; sqrt($NUMROBOTS/$DENSITY)" | bc)
 export ARENADIMH=$(echo "scale=3 ; $ARENADIM/2" | bc)
 export STARTDIM=$(echo "scale=3 ; $ARENADIM/5" | bc)
