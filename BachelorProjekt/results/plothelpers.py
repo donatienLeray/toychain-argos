@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple, Set, Callable
+from typing import List, Dict, Optional, Tuple, Set, Callable, NamedTuple
 import os
 import math
 import pickle
@@ -618,6 +618,86 @@ def _extract_config_info(exp_key: str) -> Tuple[str, int]:
     return consensus, num_agents
 
 
+def _top_level_experiment_name(exp_key: str) -> str:
+    return exp_key.split('/', 1)[0] if '/' in exp_key else exp_key
+
+
+def _get_consensus_agent_groups(exp_choices: List[str]) -> Dict[Tuple[str, str], List[str]]:
+    """Group experiment keys by (consensus, num_agents_as_str)."""
+    groups: Dict[Tuple[str, str], List[str]] = {}
+    for exp_key in exp_choices:
+        consensus, num_agents = _extract_config_info(exp_key)
+        if consensus is None or num_agents is None:
+            continue
+        key = (consensus, str(num_agents))
+        groups.setdefault(key, []).append(exp_key)
+    return groups
+
+
+class GroupedPlotMode(NamedTuple):
+    single_exp_mode: bool
+    split_config_mode: bool
+    consensus_drop: Optional[widgets.Dropdown]
+    agents_drop: Optional[widgets.Dropdown]
+    config_mapping: Dict
+    groups: Dict[Tuple[str, str], List[str]]
+    multi_experiment_group_mode: bool
+
+
+def _prepare_grouped_plot_mode(exp_choices, agents_description='# Agents:'):
+    """Prepare shared grouped-plot metadata for split-config or multi-experiment mode."""
+    single_exp_mode, split_config_mode, consensus_drop, agents_drop, config_mapping, _ = _parse_config_names(exp_choices)
+    groups = _get_consensus_agent_groups(exp_choices)
+    top_levels = {_top_level_experiment_name(e) for e in exp_choices}
+    multi_experiment_group_mode = (len(top_levels) > 1 and len(groups) > 0)
+
+    if agents_drop is not None:
+        desc_agent_values = sorted([str(v) for v in agents_drop.options], key=int, reverse=True)
+        if desc_agent_values:
+            agents_drop.options = desc_agent_values
+            agents_drop.value = desc_agent_values[0]
+
+    if multi_experiment_group_mode and not split_config_mode:
+        agent_values = sorted({a for _, a in groups.keys()}, key=int, reverse=True)
+        if agent_values:
+            agents_drop = widgets.Dropdown(options=agent_values, value=agent_values[0], description=agents_description)
+
+    return GroupedPlotMode(
+        single_exp_mode=single_exp_mode,
+        split_config_mode=split_config_mode,
+        consensus_drop=consensus_drop,
+        agents_drop=agents_drop,
+        config_mapping=config_mapping,
+        groups=groups,
+        multi_experiment_group_mode=multi_experiment_group_mode,
+    )
+
+
+def _get_loaded_grouped_mode(agents_description='# Agents:'):
+    loaded_data = globals().get('loaded_data', {})
+    exp_choices = sorted(loaded_data.keys())
+    grouped_mode = _prepare_grouped_plot_mode(exp_choices, agents_description=agents_description)
+    return loaded_data, grouped_mode
+
+
+def _resolve_grouped_consensus_selection(grouped_mode: GroupedPlotMode):
+    """Return selected_agents and consensus list for grouped plot UIs."""
+    selected_agents = str(grouped_mode.agents_drop.value)
+    if grouped_mode.split_config_mode:
+        consensus_types = list(grouped_mode.consensus_drop.options)
+    else:
+        consensus_types = sorted({c for (c, a) in grouped_mode.groups.keys() if a == selected_agents})
+    return selected_agents, consensus_types
+
+
+def _resolve_grouped_exp_keys(grouped_mode: GroupedPlotMode, consensus, selected_agents):
+    """Return experiment keys contributing to a consensus/agent grouped plot."""
+    if grouped_mode.split_config_mode:
+        exp_key = grouped_mode.config_mapping.get((consensus, selected_agents))
+        return [exp_key] if exp_key else []
+    return grouped_mode.groups.get((consensus, selected_agents), [])
+
+
 def get_main_chain(robots_dict: Dict) -> Optional[pd.DataFrame]:
     """Return the robot chain with the highest TDIFF on its last block.
 
@@ -1113,137 +1193,6 @@ def show_block_production_summary():
     print("=" * 60)
 
 
-def show_block_production_picker():
-    """Interactive picker to show block production counts filtered by experiment, rep, and robot.
-    Reuses the generic data picker used in previews and histograms.
-    """
-    if 'block_production_counts' not in globals() or not globals().get('block_production_counts'):
-        print("No block production data available. Load data first using the CSV picker.")
-        return
-
-    counts = globals().get('block_production_counts', {})
-
-    def _picker_callback(exp, rep_sel, robot_sel, loaded_data, preview_out):
-        # exp is a key from loaded_data; counts uses same keys
-        with preview_out:
-            preview_out.clear_output()
-            if exp not in counts:
-                print(f"No block production data found for {exp}.")
-                return
-
-            rows = []
-            reps_dict = counts.get(exp, {})
-
-            # Determine reps to include
-            rep_keys = sorted(reps_dict.keys())
-            if rep_sel != 'All':
-                rep_keys = [rep_sel] if rep_sel in reps_dict else []
-
-            # Build rows
-            for rep in rep_keys:
-                robots_dict = reps_dict.get(rep, {})
-                # Determine robots to include
-                robot_items = sorted(robots_dict.items())
-                if robot_sel != 'All':
-                    robot_items = [(r, c) for (r, c) in robot_items if str(r) == str(robot_sel)]
-
-                for robot, count in robot_items:
-                    rows.append({
-                        'Experiment': exp,
-                        'Rep': rep,
-                        'Robot': robot,
-                        'Blocks Produced': count,
-                    })
-
-            if not rows:
-                print("No data for selected filters.")
-                return
-
-            df = pd.DataFrame(rows)
-            # Display table
-            display(df.sort_values(['Rep', 'Robot']).reset_index(drop=True))
-
-            # Per-rep summary
-            print("\nPer-Rep Summary:")
-            rep_sum = df.groupby('Rep')['Blocks Produced'].agg(['count', 'sum', 'mean', 'median', 'std', 'min', 'max'])
-            rep_sum.columns = ['Robots', 'Total', 'Mean', 'Median', 'Std', 'Min', 'Max']
-            display(rep_sum)
-
-            # Overall
-            print("\nOverall:")
-            total = int(df['Blocks Produced'].sum())
-            avg = float(df['Blocks Produced'].mean())
-            print(f"Total blocks produced: {total}")
-            print(f"Average per robot: {avg:.1f}")
-
-    # Reuse the shared picker UI
-    create_data_picker_with_callback('Show Block Counts', _picker_callback, button_style='primary')
-
-
-def get_block_production_count(experiment=None, rep=None, robot=None):
-    """Get block production count(s) from loaded data.
-    
-    Args:
-        experiment: Experiment key (e.g., 'ProofOfWork_5'). If None, returns all.
-        rep: Repetition/run number (e.g., '1'). If None, returns all for experiment.
-        robot: Robot number (e.g., 2). If None, returns all for rep.
-    
-    Returns:
-        int, dict, or None depending on specificity of query
-    
-    Examples:
-        get_block_production_count('ProofOfWork_5', '1', 2)  # Returns count for robot 2
-        get_block_production_count('ProofOfWork_5', '1')     # Returns dict of all robots in rep 1
-        get_block_production_count('ProofOfWork_5')          # Returns dict of all reps
-        get_block_production_count()                         # Returns full dict
-    """
-    if 'block_production_counts' not in globals():
-        print("No block production data available. Load data first.")
-        return None
-    
-    counts = globals().get('block_production_counts', {})
-    
-    if experiment is None:
-        return counts
-    
-    if experiment not in counts:
-        print(f"Experiment '{experiment}' not found. Available: {list(counts.keys())}")
-        return None
-    
-    if rep is None:
-        return counts[experiment]
-    
-    rep_str = str(rep)
-    if rep_str not in counts[experiment]:
-        print(f"Rep '{rep}' not found in {experiment}. Available: {list(counts[experiment].keys())}")
-        return None
-    
-    if robot is None:
-        return counts[experiment][rep_str]
-    
-    if robot not in counts[experiment][rep_str]:
-        print(f"Robot {robot} not found in {experiment}/{rep}. Available: {list(counts[experiment][rep_str].keys())}")
-        return None
-    
-    return counts[experiment][rep_str][robot]
-    
-    if split_config_mode:
-        consensus_drop.observe(lambda *_: _update_rep_robot_cols(), names='value')
-        agents_drop.observe(lambda *_: _update_rep_robot_cols(), names='value')
-        _update_rep_robot_cols()
-        display(widgets.VBox([
-            widgets.HBox([consensus_drop, agents_drop, rep_drop, robot_drop, col_drop, btn]), 
-            preview_out
-        ]))
-    else:
-        exp_drop.observe(lambda *_: _update_rep_robot_cols(), names='value')
-        _update_rep_robot_cols()
-        display(widgets.VBox([
-            widgets.HBox([exp_drop, rep_drop, robot_drop, col_drop, btn]), 
-            preview_out
-        ]))
-
-
 def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None, save_path=None, dpi=300):
     """Show cumulative block reception interval distribution with separated 1-second bins.
     
@@ -1254,9 +1203,7 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None,
         print("No `loaded_data` available. Use the picker and click Load data first.")
         return
 
-    loaded_data = globals().get('loaded_data', {})
-    exp_choices = sorted(loaded_data.keys())
-    single_exp_mode, split_config_mode, consensus_drop, agents_drop, config_mapping, _ = _parse_config_names(exp_choices)
+    loaded_data, grouped_mode = _get_loaded_grouped_mode()
 
     def _compute_reception_intervals(exp_key):
         dfs = []
@@ -1292,7 +1239,7 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None,
 
         return intervals
 
-    if split_config_mode:
+    if grouped_mode.split_config_mode or grouped_mode.multi_experiment_group_mode:
         preview_out = widgets.Output()
         btn = widgets.Button(description='Show Reception Bins', button_style='primary')
 
@@ -1301,14 +1248,19 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None,
                 preview_out.clear_output()
                 intervals_by_consensus = {}
 
-                consensus_types = list(consensus_drop.options)
+                selected_agents, consensus_types = _resolve_grouped_consensus_selection(grouped_mode)
+
                 for consensus in consensus_types:
-                    exp_key = config_mapping.get((consensus, agents_drop.value))
-                    if not exp_key:
-                        continue
-                    intervals = _compute_reception_intervals(exp_key)
-                    if intervals:
-                        intervals_by_consensus[consensus] = intervals
+                    exp_keys = _resolve_grouped_exp_keys(grouped_mode, consensus, selected_agents)
+
+                    consensus_intervals = []
+                    for exp_key in exp_keys:
+                        if not exp_key:
+                            continue
+                        consensus_intervals.extend(_compute_reception_intervals(exp_key))
+
+                    if consensus_intervals:
+                        intervals_by_consensus[consensus] = consensus_intervals
 
                 if not intervals_by_consensus:
                     print("No valid reception interval data found for the selected agent count.")
@@ -1363,11 +1315,11 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None,
                 for idx in range(n_consensus, nrows * ncols):
                     axes[idx // ncols][idx % ncols].set_visible(False)
 
-                fig.suptitle(title if title is not None else f'Block Reception Interval Distribution (Agents: {agents_drop.value})', fontsize=13)
+                fig.suptitle(title if title is not None else f'Block Reception Interval Distribution (Agents: {grouped_mode.agents_drop.value})', fontsize=13)
                 plt.tight_layout()
                 _save_plot_if_needed(
                     fig,
-                    plot_name=f'reception_bins_agents_{agents_drop.value}',
+                    plot_name=f'reception_bins_agents_{grouped_mode.agents_drop.value}',
                     exp_key=None,
                     save_path=save_path,
                     dpi=dpi,
@@ -1375,7 +1327,7 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None,
                 plt.show()
 
         btn.on_click(_on_button_click)
-        display(widgets.VBox([widgets.HBox([agents_drop, btn]), preview_out]))
+        display(widgets.VBox([widgets.HBox([grouped_mode.agents_drop, btn]), preview_out]))
         return
 
     def _reception_bins_callback(exp, rep_sel, robot_sel, loaded_data, preview_out):
@@ -1457,7 +1409,6 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None,
             
             # Plot bars with dashed lines between them
             for i, (center, height) in enumerate(zip(bin_centers, cumsum_pct)):
-                left = center - bin_width_sec / 2
                 ax.bar(center, height, width=bin_width_sec, color='green', alpha=0.6, zorder=3, edgecolor='black', linewidth=0.5)
                 
                 # Add dashed vertical line between bins (except after last bin)
@@ -1504,9 +1455,7 @@ def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', titl
         print("No `loaded_data` available. Use the picker and click Load data first.")
         return
 
-    loaded_data = globals().get('loaded_data', {})
-    exp_choices = sorted(loaded_data.keys())
-    single_exp_mode, split_config_mode, consensus_drop, agents_drop, config_mapping, _ = _parse_config_names(exp_choices)
+    loaded_data, grouped_mode = _get_loaded_grouped_mode()
 
     def _compute_delays(exp_key, rep_sel='All', robot_sel='All'):
         delays = []
@@ -1534,7 +1483,7 @@ def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', titl
 
         return delays
 
-    if split_config_mode:
+    if grouped_mode.split_config_mode or grouped_mode.multi_experiment_group_mode:
         preview_out = widgets.Output()
         btn = widgets.Button(description='Show Production Delay Bins', button_style='primary')
 
@@ -1543,14 +1492,19 @@ def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', titl
                 preview_out.clear_output()
                 delays_by_consensus = {}
 
-                consensus_types = list(consensus_drop.options)
+                selected_agents, consensus_types = _resolve_grouped_consensus_selection(grouped_mode)
+
                 for consensus in consensus_types:
-                    exp_key = config_mapping.get((consensus, agents_drop.value))
-                    if not exp_key:
-                        continue
-                    delays = _compute_delays(exp_key, rep_sel='All', robot_sel='All')
-                    if delays:
-                        delays_by_consensus[consensus] = delays
+                    exp_keys = _resolve_grouped_exp_keys(grouped_mode, consensus, selected_agents)
+
+                    consensus_delays = []
+                    for exp_key in exp_keys:
+                        if not exp_key:
+                            continue
+                        consensus_delays.extend(_compute_delays(exp_key, rep_sel='All', robot_sel='All'))
+
+                    if consensus_delays:
+                        delays_by_consensus[consensus] = consensus_delays
 
                 if not delays_by_consensus:
                     print("No valid production delay data found for the selected agent count.")
@@ -1602,11 +1556,11 @@ def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', titl
                 for idx in range(n_consensus, nrows * ncols):
                     axes[idx // ncols][idx % ncols].set_visible(False)
 
-                fig.suptitle(title if title is not None else f'Block Production Delay Distribution (Agents: {agents_drop.value})', fontsize=13)
+                fig.suptitle(title if title is not None else f'Block Production Delay Distribution (Agents: {grouped_mode.agents_drop.value})', fontsize=13)
                 plt.tight_layout()
                 _save_plot_if_needed(
                     fig,
-                    plot_name=f'production_delay_bins_agents_{agents_drop.value}',
+                    plot_name=f'production_delay_bins_agents_{grouped_mode.agents_drop.value}',
                     exp_key=None,
                     save_path=save_path,
                     dpi=dpi,
@@ -1614,7 +1568,7 @@ def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', titl
                 plt.show()
 
         btn.on_click(_on_button_click)
-        display(widgets.VBox([widgets.HBox([agents_drop, btn]), preview_out]))
+        display(widgets.VBox([widgets.HBox([grouped_mode.agents_drop, btn]), preview_out]))
         return
 
     def _production_delay_bins_callback(exp, rep_sel, robot_sel, loaded_data, preview_out):
@@ -1718,7 +1672,7 @@ def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', titl
             )
             plt.show()
 
-            create_data_picker_with_callback('Show Production Delay Bins', _production_delay_bins_callback, 'primary')
+    create_data_picker_with_callback('Show Production Delay Bins', _production_delay_bins_callback, 'primary')
 
 
 def _create_consensus_boxplot_visualization(
@@ -1952,11 +1906,9 @@ def show_block_production_by_robot(save_path=None, dpi=None):
         print("No `block_production_counts` available. Load data first using the CSV picker.")
         return
 
-    loaded_data = globals().get('loaded_data', {})
+    loaded_data, grouped_mode = _get_loaded_grouped_mode()
     block_counts = globals().get('block_production_counts', {})
     block_hashes = globals().get('block_produced_hash', {})
-    exp_choices = sorted(loaded_data.keys())
-    single_exp_mode, split_config_mode, consensus_drop, agents_drop, config_mapping, _ = _parse_config_names(exp_choices)
 
     def _parse_producer_id(miner_val):
         if pd.isna(miner_val):
@@ -2057,25 +2009,29 @@ def show_block_production_by_robot(save_path=None, dpi=None):
 
         return rank_blocks
 
-    if split_config_mode:
+    if grouped_mode.split_config_mode or grouped_mode.multi_experiment_group_mode:
         preview_out = widgets.Output()
         rep_drop = widgets.Dropdown(options=['All'], description='Rep:', value='All')
         btn = widgets.Button(description='Show Block Production by Robot', button_style='primary')
 
         def _update_rep_options(*_):
             reps = set()
-            for consensus in list(consensus_drop.options):
-                exp_key = config_mapping.get((consensus, agents_drop.value))
-                if not exp_key:
-                    continue
-                reps.update(loaded_data.get(exp_key, {}).keys())
+            selected_agents, consensus_values = _resolve_grouped_consensus_selection(grouped_mode)
+
+            for consensus in consensus_values:
+                exp_keys = _resolve_grouped_exp_keys(grouped_mode, consensus, selected_agents)
+
+                for exp_key in exp_keys:
+                    if not exp_key:
+                        continue
+                    reps.update(loaded_data.get(exp_key, {}).keys())
 
             sorted_reps = sorted(reps)
             current = rep_drop.value
             rep_drop.options = ['All'] + sorted_reps
             rep_drop.value = current if current in rep_drop.options else 'All'
 
-        agents_drop.observe(_update_rep_options, names='value')
+        grouped_mode.agents_drop.observe(_update_rep_options, names='value')
         _update_rep_options()
 
         def _on_button_click(_):
@@ -2083,14 +2039,24 @@ def show_block_production_by_robot(save_path=None, dpi=None):
                 preview_out.clear_output()
                 robot_data_by_consensus = {}
 
-                consensus_types = list(consensus_drop.options)
+                selected_agents, consensus_types = _resolve_grouped_consensus_selection(grouped_mode)
+
                 for consensus in consensus_types:
-                    exp_key = config_mapping.get((consensus, agents_drop.value))
-                    if not exp_key:
-                        continue
-                    robot_blocks = _compute_robot_blocks(exp_key, rep_drop.value)
-                    if robot_blocks:
-                        robot_data_by_consensus[consensus] = robot_blocks
+                    exp_keys = _resolve_grouped_exp_keys(grouped_mode, consensus, selected_agents)
+
+                    merged_blocks = {}
+                    for exp_key in exp_keys:
+                        if not exp_key:
+                            continue
+                        robot_blocks = _compute_robot_blocks(exp_key, rep_drop.value)
+                        for rid, counts in robot_blocks.items():
+                            if rid not in merged_blocks:
+                                merged_blocks[rid] = {'total': 0, 'on_chain': 0}
+                            merged_blocks[rid]['total'] += counts.get('total', 0)
+                            merged_blocks[rid]['on_chain'] += counts.get('on_chain', 0)
+
+                    if merged_blocks:
+                        robot_data_by_consensus[consensus] = merged_blocks
 
                 if not robot_data_by_consensus:
                     if rep_drop.value == 'All':
@@ -2180,11 +2146,11 @@ def show_block_production_by_robot(save_path=None, dpi=None):
                     axes[idx // ncols][idx % ncols].set_visible(False)
 
                 run_label = 'All runs' if rep_drop.value == 'All' else f'Run {rep_drop.value}'
-                fig.suptitle(f'Block Production by Robot (Agents: {agents_drop.value}, {run_label})', fontsize=13)
+                fig.suptitle(f'Block Production by Robot (Agents: {grouped_mode.agents_drop.value}, {run_label})', fontsize=13)
                 plt.tight_layout()
                 _save_plot_if_needed(
                     fig,
-                    plot_name=f'block_production_by_robot_agents_{agents_drop.value}_{rep_drop.value}',
+                    plot_name=f'block_production_by_robot_agents_{grouped_mode.agents_drop.value}_{rep_drop.value}',
                     exp_key=None,
                     save_path=save_path,
                     dpi=dpi,
@@ -2215,8 +2181,8 @@ def show_block_production_by_robot(save_path=None, dpi=None):
                     display(display_df)
 
         btn.on_click(_on_button_click)
-        display(widgets.VBox([widgets.HBox([agents_drop, rep_drop, btn]), preview_out]))
+        display(widgets.VBox([widgets.HBox([grouped_mode.agents_drop, rep_drop, btn]), preview_out]))
         return
 
-    # Fallback for non-split-config mode
+    # Fallback for unsupported naming formats
     print("Not supported for this experiment format. Use experiments with consensus_number pattern.")
