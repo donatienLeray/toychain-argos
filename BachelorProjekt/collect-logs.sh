@@ -9,10 +9,9 @@ source experimentconfig.sh
 
 LOGSFOLDER="$EXPERIMENTFOLDER/logs/"
 DATAFOLDER="$EXPERIMENTFOLDER/results/data/experiment_$1/"
-PLOTFOLDER="$EXPERIMENTFOLDER/results/plots/experiment_$1/"
 
 # Create the experiment directory
-mkdir -p $LOGSFOLDER $DATAFOLDER $PLOTFOLDER
+mkdir -p $LOGSFOLDER $DATAFOLDER
 
 # Find the latest repetition in that folder
 last_rep=$(ls $DATAFOLDER -v | tail -1 | sed 's/^0*//')
