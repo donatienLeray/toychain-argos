@@ -79,6 +79,14 @@ def _save_plot_if_needed(fig, plot_name: str, exp_key: Optional[str] = None, sav
     return out_path
 
 
+def _build_loaded_count_message(num_paths: int) -> str:
+    if num_paths == 0:
+        return "0 experiment has been loaded"
+    if num_paths == 1:
+        return "1 experiment has been loaded"
+    return f"{num_paths} experiments have been loaded"
+
+
 class ExperimentPicker:
     """Interactive experiment picker for experiments in a data folder.
 
@@ -381,12 +389,7 @@ class ExperimentPicker:
         # Use the output widget if available, otherwise fall back to printing
         try:
             # Build the user-facing message
-            if num_paths == 0:
-                msg = "0 experiment has been loaded"
-            elif num_paths == 1:
-                msg = "1 experiment has been loaded"
-            else:
-                msg = f"{num_paths} experiments have been loaded"
+            msg = _build_loaded_count_message(num_paths)
 
             # Prepare the 'see details' button and details output (only if we have paths)
             see_btn = None
@@ -449,12 +452,7 @@ class ExperimentPicker:
                     see_btn.on_click(_fallback_show)
                     display(see_btn)
         except Exception:
-            if num_paths == 0:
-                msg = "0 experiment has been loaded"
-            elif num_paths == 1:
-                msg = "1 experiment has been loaded"
-            else:
-                msg = f"{num_paths} experiments have been loaded"
+            msg = _build_loaded_count_message(num_paths)
             print(msg)
 
     def show(self):
@@ -599,6 +597,69 @@ def _update_rep_robot_col_options(loaded_data: Dict, exp: str, rep_drop: widgets
     col_drop.value = 'All'
 
 
+class ExperimentSelectorContext(NamedTuple):
+    split_config_mode: bool
+    consensus_drop: Optional[widgets.Dropdown]
+    agents_drop: Optional[widgets.Dropdown]
+    exp_drop: Optional[widgets.Dropdown]
+    config_to_exp: Dict
+    name_to_exp: Dict
+
+
+def _build_experiment_selector_context(loaded_data: Dict) -> ExperimentSelectorContext:
+    exp_choices = sorted(loaded_data.keys())
+    _, split_config_mode, consensus_drop, agents_drop, config_mapping, description = _parse_config_names(exp_choices)
+
+    if not split_config_mode:
+        exp_drop = widgets.Dropdown(options=list(config_mapping.keys()), description=description)
+        name_to_exp = config_mapping
+        config_to_exp = {}
+    else:
+        exp_drop = None
+        config_to_exp = config_mapping
+        name_to_exp = {}
+
+    return ExperimentSelectorContext(
+        split_config_mode=split_config_mode,
+        consensus_drop=consensus_drop,
+        agents_drop=agents_drop,
+        exp_drop=exp_drop,
+        config_to_exp=config_to_exp,
+        name_to_exp=name_to_exp,
+    )
+
+
+def _get_selected_experiment_from_context(selector_ctx: ExperimentSelectorContext) -> str:
+    return _get_current_experiment(
+        selector_ctx.split_config_mode,
+        selector_ctx.consensus_drop,
+        selector_ctx.agents_drop,
+        selector_ctx.exp_drop,
+        selector_ctx.config_to_exp,
+        selector_ctx.name_to_exp,
+    )
+
+
+def _display_selector_ui(
+    selector_ctx: ExperimentSelectorContext,
+    controls_without_selector: List[widgets.Widget],
+    action_button: widgets.Button,
+    preview_out: widgets.Output,
+    update_callback: Callable,
+):
+    if selector_ctx.split_config_mode:
+        selector_ctx.consensus_drop.observe(lambda *_: update_callback(), names='value')
+        selector_ctx.agents_drop.observe(lambda *_: update_callback(), names='value')
+        update_callback()
+        selector_row = [selector_ctx.consensus_drop, selector_ctx.agents_drop]
+    else:
+        selector_ctx.exp_drop.observe(lambda *_: update_callback(), names='value')
+        update_callback()
+        selector_row = [selector_ctx.exp_drop]
+
+    display(widgets.VBox([widgets.HBox(selector_row + controls_without_selector + [action_button]), preview_out]))
+
+
 def _extract_config_info(exp_key: str) -> Tuple[str, int]:
     """Extract consensus type and number of agents from experiment key.
     
@@ -696,6 +757,53 @@ def _resolve_grouped_exp_keys(grouped_mode: GroupedPlotMode, consensus, selected
         exp_key = grouped_mode.config_mapping.get((consensus, selected_agents))
         return [exp_key] if exp_key else []
     return grouped_mode.groups.get((consensus, selected_agents), [])
+
+
+def _plot_cumulative_hist_bars(
+    ax,
+    data_to_plot,
+    *,
+    bin_edges,
+    bin_centers,
+    bin_width_sec,
+    color,
+    xlabel,
+    ylabel,
+    xlim,
+    sample_label,
+    sample_x,
+    sample_fontsize=9,
+):
+    hist, _ = np.histogram(data_to_plot, bins=bin_edges)
+    hist_sum = hist.sum()
+    if hist_sum > 0:
+        cumsum = np.cumsum(hist.astype(np.float32))
+        cumsum_pct = (cumsum / hist_sum) * 100
+    else:
+        cumsum_pct = np.zeros_like(hist, dtype=np.float32)
+
+    for i, (center, height) in enumerate(zip(bin_centers, cumsum_pct)):
+        ax.bar(center, height, width=bin_width_sec, color=color, alpha=0.6, zorder=3, edgecolor='black', linewidth=0.5)
+        if i < len(bin_centers) - 1:
+            right_edge = center + bin_width_sec / 2
+            ax.plot([right_edge, right_edge], [0, 100], 'k--', linewidth=1, zorder=2, alpha=0.5)
+
+    ax.grid(axis='y', linestyle='--', color='gray', alpha=0.3, zorder=1)
+    ax.set_ylim(ymin=0, ymax=100)
+    ax.set_xlim(*xlim)
+    ax.set_xlabel(xlabel, fontsize=11)
+    ax.set_ylabel(ylabel, fontsize=11)
+    ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=100, decimals=0))
+    ax.text(
+        sample_x,
+        cumsum_pct.max() * 0.2,
+        sample_label,
+        ha='right',
+        fontsize=sample_fontsize,
+        zorder=4,
+        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+    )
+    return cumsum_pct
 
 
 def get_main_chain(robots_dict: Dict) -> Optional[pd.DataFrame]:
@@ -1013,46 +1121,32 @@ def create_data_picker_with_callback(button_text, callback_func, button_style='p
         return
 
     loaded_data = globals().get('loaded_data', {})
-    exp_choices = sorted(loaded_data.keys())
-    
-    # Parse config names using helper function
-    single_exp_mode, split_config_mode, consensus_drop, agents_drop, config_mapping, description = _parse_config_names(exp_choices)
-    
-    if not split_config_mode:
-        exp_drop = widgets.Dropdown(options=list(config_mapping.keys()), description=description)
-        name_to_exp = config_mapping
-        config_to_exp = {}
-    else:
-        exp_drop = None
-        config_to_exp = config_mapping
-        name_to_exp = {}
+    selector_ctx = _build_experiment_selector_context(loaded_data)
     
     rep_drop = widgets.Dropdown(options=['All'], description='Rep:', value='All')
     robot_drop = widgets.Dropdown(options=['All'], description='Robot:', value='All')
     preview_out = widgets.Output()
 
     def _update_rep_robot(*_):
-        exp = _get_current_experiment(split_config_mode, consensus_drop, agents_drop, exp_drop, config_to_exp, name_to_exp)
+        exp = _get_selected_experiment_from_context(selector_ctx)
         _update_rep_robot_options(loaded_data, exp, rep_drop, robot_drop)
 
     def _on_button_click(_):
-        exp = _get_current_experiment(split_config_mode, consensus_drop, agents_drop, exp_drop, config_to_exp, name_to_exp)
+        exp = _get_selected_experiment_from_context(selector_ctx)
         rep_sel = rep_drop.value
         robot_sel = robot_drop.value
         callback_func(exp, rep_sel, robot_sel, loaded_data, preview_out)
 
     btn = widgets.Button(description=button_text, button_style=button_style)
     btn.on_click(_on_button_click)
-    
-    if split_config_mode:
-        consensus_drop.observe(lambda *_: _update_rep_robot(), names='value')
-        agents_drop.observe(lambda *_: _update_rep_robot(), names='value')
-        _update_rep_robot()
-        display(widgets.VBox([widgets.HBox([consensus_drop, agents_drop, rep_drop, robot_drop, btn]), preview_out]))
-    else:
-        exp_drop.observe(lambda *_: _update_rep_robot(), names='value')
-        _update_rep_robot()
-        display(widgets.VBox([widgets.HBox([exp_drop, rep_drop, robot_drop, btn]), preview_out]))
+
+    _display_selector_ui(
+        selector_ctx,
+        controls_without_selector=[rep_drop, robot_drop],
+        action_button=btn,
+        preview_out=preview_out,
+        update_callback=_update_rep_robot,
+    )
 
 
 def show_loaded_preview():
@@ -1062,19 +1156,7 @@ def show_loaded_preview():
         return
 
     loaded_data = globals().get('loaded_data', {})
-    exp_choices = sorted(loaded_data.keys())
-
-    # Parse config names using helper function
-    single_exp_mode, split_config_mode, consensus_drop, agents_drop, config_mapping, description = _parse_config_names(exp_choices)
-    
-    if not split_config_mode:
-        exp_drop = widgets.Dropdown(options=list(config_mapping.keys()), description=description)
-        name_to_exp = config_mapping
-        config_to_exp = {}
-    else:
-        exp_drop = None
-        config_to_exp = config_mapping
-        name_to_exp = {}
+    selector_ctx = _build_experiment_selector_context(loaded_data)
     
     rep_drop = widgets.Dropdown(options=['All'], description='Rep:', value='All')
     robot_drop = widgets.Dropdown(options=['All'], description='Robot:', value='All')
@@ -1082,13 +1164,13 @@ def show_loaded_preview():
     preview_out = widgets.Output()
 
     def _update_rep_robot_cols(*_):
-        exp = _get_current_experiment(split_config_mode, consensus_drop, agents_drop, exp_drop, config_to_exp, name_to_exp)
+        exp = _get_selected_experiment_from_context(selector_ctx)
         _update_rep_robot_col_options(loaded_data, exp, rep_drop, robot_drop, col_drop)
 
     def _preview(_):
         with preview_out:
             preview_out.clear_output()
-            exp = _get_current_experiment(split_config_mode, consensus_drop, agents_drop, exp_drop, config_to_exp, name_to_exp)
+            exp = _get_selected_experiment_from_context(selector_ctx)
             rep_sel = rep_drop.value
             robot_sel = robot_drop.value
             col_sel = col_drop.value
@@ -1130,22 +1212,14 @@ def show_loaded_preview():
 
     btn = widgets.Button(description='Preview', button_style='primary')
     btn.on_click(_preview)
-    
-    if split_config_mode:
-        consensus_drop.observe(lambda *_: _update_rep_robot_cols(), names='value')
-        agents_drop.observe(lambda *_: _update_rep_robot_cols(), names='value')
-        _update_rep_robot_cols()
-        display(widgets.VBox([
-            widgets.HBox([consensus_drop, agents_drop, rep_drop, robot_drop, col_drop, btn]), 
-            preview_out
-        ]))
-    else:
-        exp_drop.observe(lambda *_: _update_rep_robot_cols(), names='value')
-        _update_rep_robot_cols()
-        display(widgets.VBox([
-            widgets.HBox([exp_drop, rep_drop, robot_drop, col_drop, btn]), 
-            preview_out
-        ]))
+
+    _display_selector_ui(
+        selector_ctx,
+        controls_without_selector=[rep_drop, robot_drop, col_drop],
+        action_button=btn,
+        preview_out=preview_out,
+        update_callback=_update_rep_robot_cols,
+    )
 
 
 def show_block_production_summary():
@@ -1205,10 +1279,14 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None,
 
     loaded_data, grouped_mode = _get_loaded_grouped_mode()
 
-    def _compute_reception_intervals(exp_key):
+    def _compute_reception_intervals(exp_key, rep_sel='All', robot_sel='All'):
         dfs = []
         for rep, robots in loaded_data.get(exp_key, {}).items():
+            if rep_sel != 'All' and rep != rep_sel:
+                continue
             for robot, df in robots.items():
+                if robot_sel != 'All' and str(robot) != robot_sel:
+                    continue
                 if isinstance(df, pd.DataFrame):
                     if 'HASH' not in df.columns or 'RECEPTION' not in df.columns or 'TIMESTAMP' not in df.columns:
                         continue
@@ -1287,30 +1365,21 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None,
                         ax.set_visible(False)
                         continue
 
-                    hist, _ = np.histogram(data_to_plot, bins=bin_edges)
-                    hist_sum = hist.sum()
-                    if hist_sum > 0:
-                        cumsum = np.cumsum(hist.astype(np.float32))
-                        cumsum_pct = (cumsum / hist_sum) * 100
-                    else:
-                        cumsum_pct = np.zeros_like(hist, dtype=np.float32)
-
-                    for i, (center, height) in enumerate(zip(bin_centers, cumsum_pct)):
-                        ax.bar(center, height, width=bin_width_sec, color='green', alpha=0.6, zorder=3, edgecolor='black', linewidth=0.5)
-                        if i < len(bin_centers) - 1:
-                            right_edge = center + bin_width_sec / 2
-                            ax.plot([right_edge, right_edge], [0, 100], 'k--', linewidth=1, zorder=2, alpha=0.5)
-
-                    ax.grid(axis='y', linestyle='--', color='gray', alpha=0.3, zorder=1)
-                    ax.set_ylim(ymin=0, ymax=100)
-                    ax.set_xlim(xmin=0, xmax=25)
+                    _plot_cumulative_hist_bars(
+                        ax,
+                        data_to_plot,
+                        bin_edges=bin_edges,
+                        bin_centers=bin_centers,
+                        bin_width_sec=bin_width_sec,
+                        color='green',
+                        xlabel=xlabel if xlabel is not None else 'Block Reception Interval [s]',
+                        ylabel=ylabel,
+                        xlim=(0, 25),
+                        sample_label=f'n={len(data_to_plot):,} intervals',
+                        sample_x=24.5,
+                        sample_fontsize=9,
+                    )
                     ax.set_title(consensus)
-                    ax.set_xlabel(xlabel if xlabel is not None else 'Block Reception Interval [s]', fontsize=11)
-                    ax.set_ylabel(ylabel, fontsize=11)
-                    ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=100, decimals=0))
-                    ax.text(24.5, cumsum_pct.max() * 0.2,
-                            f'n={len(data_to_plot):,} intervals', ha='right', fontsize=9,
-                            zorder=4, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
                 for idx in range(n_consensus, nrows * ncols):
                     axes[idx // ncols][idx % ncols].set_visible(False)
@@ -1333,45 +1402,11 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None,
     def _reception_bins_callback(exp, rep_sel, robot_sel, loaded_data, preview_out):
         with preview_out:
             preview_out.clear_output()
-            dfs = []
-            
-            for rep, robots in loaded_data.get(exp, {}).items():
-                if rep_sel != 'All' and rep != rep_sel:
-                    continue
-                for robot, df in robots.items():
-                    if robot_sel != 'All' and str(robot) != robot_sel:
-                        continue
-                    if isinstance(df, pd.DataFrame):
-                        if 'HASH' not in df.columns or 'RECEPTION' not in df.columns or 'TIMESTAMP' not in df.columns:
-                            print(f'Warning: Missing columns in {exp}/{rep}/robot_{robot}')
-                            continue
-                        df_copy = df[['HASH', 'RECEPTION', 'TIMESTAMP']].copy()
-                        df_copy['REP'] = rep
-                        dfs.append(df_copy)
-            
-            if not dfs:
+            intervals = _compute_reception_intervals(exp, rep_sel=rep_sel, robot_sel=robot_sel)
+
+            if not intervals:
                 print(f'No data found for RECEPTION in {exp}')
                 return
-            
-            combined = pd.concat(dfs, ignore_index=True)
-            
-            # Build per-block reception intervals:
-            # first_reception - timestamp, then reception2 - reception1, etc.
-            intervals = []
-            for (rep, block_hash), group in combined.groupby(['REP', 'HASH']):
-                timestamps = group['TIMESTAMP'].dropna().values
-                if len(timestamps) == 0:
-                    continue
-                block_timestamp = np.min(timestamps)
-
-                receptions = group['RECEPTION'].dropna()
-                receptions = receptions[receptions > 0].sort_values().values
-                if len(receptions) == 0:
-                    continue
-
-                series = np.concatenate(([block_timestamp], receptions))
-                diffs = np.diff(series)
-                intervals.extend(diffs)
 
             data_to_plot = pd.Series(intervals).dropna()
             data_to_plot = data_to_plot[data_to_plot > 0].values
@@ -1391,46 +1426,26 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None,
                 print(f'No valid RECEPTION-TIMESTAMP data <= 25s found for {exp}')
                 return
             bin_edges = np.arange(0, max_bin + bin_width, bin_width)
-            
-            # Count occurrences in each bin
-            hist, _ = np.histogram(data_to_plot, bins=bin_edges)
-            
-            # Calculate cumulative percentage
-            hist_sum = hist.sum()
-            if hist_sum > 0:
-                cumsum = np.cumsum(hist.astype(np.float32))
-                cumsum_pct = (cumsum / hist_sum) * 100
-            else:
-                cumsum_pct = np.zeros_like(hist, dtype=np.float32)
-            
+
             # Create bars for each bin
             bin_centers = (bin_edges[:-1] + bin_width / 2) / 10  # Convert to seconds
             bin_width_sec = bin_width / 10  # Width in seconds
-            
-            # Plot bars with dashed lines between them
-            for i, (center, height) in enumerate(zip(bin_centers, cumsum_pct)):
-                ax.bar(center, height, width=bin_width_sec, color='green', alpha=0.6, zorder=3, edgecolor='black', linewidth=0.5)
-                
-                # Add dashed vertical line between bins (except after last bin)
-                if i < len(bin_centers) - 1:
-                    right_edge = center + bin_width_sec / 2
-                    ax.plot([right_edge, right_edge], [0, 100], 'k--', linewidth=1, zorder=2, alpha=0.5)
-            
-            ax.grid(axis='y', linestyle='--', color='gray', alpha=0.3, zorder=1)
-            
-            # Add text annotation with sample count
-            n_samples = len(data_to_plot)
-            ax.text(24.5, cumsum_pct.max() * 0.2,
-                f'n={n_samples:,} receptions', ha='right', fontsize=10,
-                zorder=4, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
-            ax.set_ylim(ymin=0, ymax=100)
-            ax.set_xlim(xmin=0, xmax=25)
-            
-            ax.set_xlabel(xlabel if xlabel is not None else 'Block Reception Time [s]', fontsize=11)
-            ax.set_ylabel(ylabel, fontsize=11)
+            _plot_cumulative_hist_bars(
+                ax,
+                data_to_plot,
+                bin_edges=bin_edges,
+                bin_centers=bin_centers,
+                bin_width_sec=bin_width_sec,
+                color='green',
+                xlabel=xlabel if xlabel is not None else 'Block Reception Time [s]',
+                ylabel=ylabel,
+                xlim=(0, 25),
+                sample_label=f'n={len(data_to_plot):,} receptions',
+                sample_x=24.5,
+                sample_fontsize=10,
+            )
             ax.set_title(title if title is not None else f'Block Reception Distribution - {exp}', fontsize=12)
-            ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=100, decimals=0))
             
             plt.tight_layout()
             _save_plot_if_needed(
@@ -1527,30 +1542,22 @@ def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', titl
                     data_to_plot = pd.Series(delays).dropna()
                     data_to_plot = data_to_plot[data_to_plot >= 0].values
 
-                    hist, _ = np.histogram(data_to_plot, bins=bin_edges)
-                    hist_sum = hist.sum()
-                    if hist_sum > 0:
-                        cumsum = np.cumsum(hist.astype(np.float32))
-                        cumsum_pct = (cumsum / hist_sum) * 100
-                    else:
-                        cumsum_pct = np.zeros_like(hist, dtype=np.float32)
-
-                    for i, (center, height) in enumerate(zip(bin_centers, cumsum_pct)):
-                        ax.bar(center, height, width=bin_width_sec, color='purple', alpha=0.6, zorder=3, edgecolor='black', linewidth=0.5)
-                        if i < len(bin_centers) - 1:
-                            right_edge = center + bin_width_sec / 2
-                            ax.plot([right_edge, right_edge], [0, 100], 'k--', linewidth=1, zorder=2, alpha=0.5)
-
-                    ax.grid(axis='y', linestyle='--', color='gray', alpha=0.3, zorder=1)
-                    ax.set_ylim(ymin=0, ymax=100)
-                    ax.set_xlim(xmin=0, xmax=max(bin_centers) + bin_width_sec / 2)
+                    max_x = max(bin_centers) + bin_width_sec / 2
+                    _plot_cumulative_hist_bars(
+                        ax,
+                        data_to_plot,
+                        bin_edges=bin_edges,
+                        bin_centers=bin_centers,
+                        bin_width_sec=bin_width_sec,
+                        color='purple',
+                        xlabel=xlabel if xlabel is not None else 'Block Production Delay [s]',
+                        ylabel=ylabel,
+                        xlim=(0, max_x),
+                        sample_label=f'n={len(data_to_plot):,} delays',
+                        sample_x=max(bin_centers) * 0.95,
+                        sample_fontsize=9,
+                    )
                     ax.set_title(consensus)
-                    ax.set_xlabel(xlabel if xlabel is not None else 'Block Production Delay [s]', fontsize=11)
-                    ax.set_ylabel(ylabel, fontsize=11)
-                    ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=100, decimals=0))
-                    ax.text(max(bin_centers) * 0.95, cumsum_pct.max() * 0.2,
-                            f'n={len(data_to_plot):,} delays', ha='right', fontsize=9,
-                            zorder=4, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
                 # Hide unused subplots
                 for idx in range(n_consensus, nrows * ncols):
@@ -1574,33 +1581,7 @@ def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', titl
     def _production_delay_bins_callback(exp, rep_sel, robot_sel, loaded_data, preview_out):
         with preview_out:
             preview_out.clear_output()
-            delays = []
-
-            for rep, robots in loaded_data.get(exp, {}).items():
-                if rep_sel != 'All' and rep != rep_sel:
-                    continue
-
-                # Choose chain: main chain by default, or a specific robot if selected
-                if robot_sel == 'All':
-                    chain_df = get_main_chain(robots)
-                else:
-                    chain_df = robots.get(int(robot_sel)) if robot_sel.isdigit() else None
-
-                if not isinstance(chain_df, pd.DataFrame):
-                    continue
-                if 'TIMESTAMP' not in chain_df.columns or 'HASH' not in chain_df.columns:
-                    print(f'Warning: Missing columns in {exp}/{rep}')
-                    continue
-
-                # Use unique blocks on the main chain, ordered by timestamp
-                unique_blocks = chain_df.groupby('HASH', as_index=False)['TIMESTAMP'].min()
-                timestamps = unique_blocks['TIMESTAMP'].dropna().sort_values().values
-                if len(timestamps) < 3:
-                    continue
-
-                block_diffs = np.diff(timestamps)
-                # Skip the first delay (genesis -> block 1)
-                delays.extend(block_diffs[1:])
+            delays = _compute_delays(exp, rep_sel=rep_sel, robot_sel=robot_sel)
 
             if not delays:
                 print(f'No data found for TIMESTAMP in {exp}')
@@ -1622,45 +1603,26 @@ def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', titl
             max_bin = int(np.ceil(max_val / bin_width)) * bin_width
             bin_edges = np.arange(0, max_bin + bin_width, bin_width)
 
-            # Count occurrences in each bin
-            hist, _ = np.histogram(data_to_plot, bins=bin_edges)
-
-            # Calculate cumulative percentage
-            hist_sum = hist.sum()
-            if hist_sum > 0:
-                cumsum = np.cumsum(hist.astype(np.float32))
-                cumsum_pct = (cumsum / hist_sum) * 100
-            else:
-                cumsum_pct = np.zeros_like(hist, dtype=np.float32)
-
             # Create bars for each bin
             bin_centers = (bin_edges[:-1] + bin_width / 2) / 10  # Convert to seconds
             bin_width_sec = bin_width / 10  # Width in seconds
 
-            # Plot bars with dashed lines between them
-            for i, (center, height) in enumerate(zip(bin_centers, cumsum_pct)):
-                ax.bar(center, height, width=bin_width_sec, color='purple', alpha=0.6, zorder=3, edgecolor='black', linewidth=0.5)
-
-                # Add dashed vertical line between bins (except after last bin)
-                if i < len(bin_centers) - 1:
-                    right_edge = center + bin_width_sec / 2
-                    ax.plot([right_edge, right_edge], [0, 100], 'k--', linewidth=1, zorder=2, alpha=0.5)
-
-            ax.grid(axis='y', linestyle='--', color='gray', alpha=0.3, zorder=1)
-
-            # Add text annotation with sample count
-            n_samples = len(data_to_plot)
-            ax.text(max(bin_centers) * 0.95, cumsum_pct.max() * 0.2,
-                    f'n={n_samples:,} delays', ha='right', fontsize=10,
-                    zorder=4, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-
-            ax.set_ylim(ymin=0, ymax=100)
-            ax.set_xlim(xmin=0, xmax=max(bin_centers) + bin_width_sec / 2)
-
-            ax.set_xlabel(xlabel if xlabel is not None else 'Block Production Delay [s]', fontsize=11)
-            ax.set_ylabel(ylabel, fontsize=11)
+            max_x = max(bin_centers) + bin_width_sec / 2
+            _plot_cumulative_hist_bars(
+                ax,
+                data_to_plot,
+                bin_edges=bin_edges,
+                bin_centers=bin_centers,
+                bin_width_sec=bin_width_sec,
+                color='purple',
+                xlabel=xlabel if xlabel is not None else 'Block Production Delay [s]',
+                ylabel=ylabel,
+                xlim=(0, max_x),
+                sample_label=f'n={len(data_to_plot):,} delays',
+                sample_x=max(bin_centers) * 0.95,
+                sample_fontsize=10,
+            )
             ax.set_title(title if title is not None else f'Block Production Delay Distribution - {exp}', fontsize=12)
-            ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=100, decimals=0))
 
             plt.tight_layout()
             _save_plot_if_needed(
@@ -1701,10 +1663,6 @@ def _create_consensus_boxplot_visualization(
         ylim: Optional tuple (min, max) to set y-axis limits on boxplots
         no_data_message: Message to display if no data
     """
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import math
-    
     if plot_df.empty:
         print(no_data_message)
         return
