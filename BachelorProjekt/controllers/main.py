@@ -222,16 +222,12 @@ def controlstep():
             except Exception as e:
                 raise e
             
-            
         # Remove peers from the toychain
         for enode in set(w3.peers)-erb_enodes:
             try:
                 w3.remove_peer(enode)
             except Exception as e:
                 raise e
-            
-            
-
 
         # Turn on LEDs according to geth peer count
         rgb.setLED(rgb.all, rgb.presets.get(len(w3.peers), 3*['red']))

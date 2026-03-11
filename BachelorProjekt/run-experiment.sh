@@ -127,9 +127,55 @@ run() {
 }
 
 
+#####################################################################
+## run experiment on updated POC
+#EXP=POC4
+#
+## standard values
+#config "TPS" 10
+#config "REPS" 10
+#config "LENGTH" 400
+#config "REP_SEED" "True"
+#loopconfig "debug" "main" "False"
+#loopconfig "debug" "loop" "True"
+#loopconfig "debug" "scs" "True"
+#
+## POC #
+#config "CONSENSUS" "ProofOfConnection"
+#loopconfig "scs" "update" "\"peer_index\""
+#loopconfig "scs" "decay" 50
+#
+## run experiment with increasing range of robots
+#for UTIL in $(seq 5 5 25); do 
+#	#name of the configuration
+#	CFG="ProofOfConnection2_${UTIL}"
+#	# set number of robots
+#	config "NUMROBOTS" "${UTIL}"
+#	# run experiment
+#	wait
+#	run "${EXP}/${CFG}" $@
+#done
+
 ####################################################################
-# run experiment with different consensus mechanisms
-EXP=POC3
+# choose Random forger as baseline consensus mechanism
+EXP=Random
+
+loopconfig "scs" "update" "\"none\""
+# run experiment with increasing range of robots
+for UTIL in $(seq 5 5 25); do 
+	#name of the configuration
+	CFG="Random_${UTIL}"
+	# set number of robots
+	config "NUMROBOTS" "${UTIL}"
+	# run experiment
+	wait
+	run "${EXP}/${CFG}" $@
+done
+
+
+####################################################################
+# vary decay on updated POC
+EXP=POC4_vary_decay
 
 # standard values
 config "TPS" 10
@@ -144,15 +190,20 @@ loopconfig "debug" "scs" "True"
 config "CONSENSUS" "ProofOfConnection"
 loopconfig "scs" "update" "\"peer_index\""
 
+
 # run experiment with increasing range of robots
 for UTIL in $(seq 5 5 25); do 
-	#name of the configuration
-	CFG="Random_${UTIL}"
-	# set number of robots
-	config "NUMROBOTS" "${UTIL}"
-	# run experiment
-	wait
-	run "${EXP}/${CFG}" $@
+	for DEC in $(seq 100 50 500); do
+		# set update function
+		loopconfig "scs" "decay" "${DEC}"
+		#name of the configuration
+		CFG="${DEC}_${UTIL}"
+		# set number of robots
+		config "NUMROBOTS" "${UTIL}"
+		# run experiment
+		wait
+		run "${EXP}/${CFG}" $@
+	done
 done
 
 
