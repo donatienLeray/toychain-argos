@@ -2046,7 +2046,7 @@ def show_block_production_by_robot(save_path=None, dpi=None):
 
             ranked = sorted(
                 run_blocks.items(),
-                key=lambda kv: (kv[1]['total'], kv[1]['on_chain']),
+                key=lambda kv: (kv[1]['on_chain'], kv[1]['total']),
                 reverse=True,
             )
             for rank_idx, (_, counts) in enumerate(ranked, start=1):

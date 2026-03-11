@@ -127,9 +127,9 @@ run() {
 }
 
 
-#####################################################################
-## run experiment on updated POC
-#EXP=POC4
+######################################################################
+### run experiment on updated POC
+#EXP=POC5
 #
 ## standard values
 #config "TPS" 10
@@ -148,7 +148,7 @@ run() {
 ## run experiment with increasing range of robots
 #for UTIL in $(seq 5 5 25); do 
 #	#name of the configuration
-#	CFG="ProofOfConnection2_${UTIL}"
+#	CFG="ProofOfConnection_${UTIL}"
 #	# set number of robots
 #	config "NUMROBOTS" "${UTIL}"
 #	# run experiment
@@ -156,21 +156,21 @@ run() {
 #	run "${EXP}/${CFG}" $@
 #done
 
-####################################################################
-# choose Random forger as baseline consensus mechanism
-EXP=Random
-
-loopconfig "scs" "update" "\"none\""
-# run experiment with increasing range of robots
-for UTIL in $(seq 5 5 25); do 
-	#name of the configuration
-	CFG="Random_${UTIL}"
-	# set number of robots
-	config "NUMROBOTS" "${UTIL}"
-	# run experiment
-	wait
-	run "${EXP}/${CFG}" $@
-done
+#####################################################################
+## choose Random forger as baseline consensus mechanism
+#EXP=Random2
+#
+#loopconfig "scs" "update" "\"none\""
+## run experiment with increasing range of robots
+#for UTIL in $(seq 5 5 25); do 
+#	#name of the configuration
+#	CFG="Random_${UTIL}"
+#	# set number of robots
+#	config "NUMROBOTS" "${UTIL}"
+#	# run experiment
+#	wait
+#	run "${EXP}/${CFG}" $@
+#done
 
 
 ####################################################################
@@ -192,8 +192,8 @@ loopconfig "scs" "update" "\"peer_index\""
 
 
 # run experiment with increasing range of robots
-for UTIL in $(seq 5 5 25); do 
-	for DEC in $(seq 100 50 500); do
+for UTIL in $(seq 10 5 25); do 
+	for DEC in $(seq 100 50 250); do
 		# set update function
 		loopconfig "scs" "decay" "${DEC}"
 		#name of the configuration
