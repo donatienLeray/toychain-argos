@@ -806,6 +806,59 @@ def _plot_cumulative_hist_bars(
     return cumsum_pct
 
 
+def _add_distribution_mean_median_annotation(
+    ax,
+    data_to_plot,
+    *,
+    consensus_label: Optional[str] = None,
+    unit_divisor: float = 10.0,
+    unit_suffix: str = 's',
+):
+    """Annotate a distribution subplot with mean/median lines and summary text.
+
+    Args:
+        ax: Matplotlib axis to annotate.
+        data_to_plot: Numeric array-like values currently depicted in the chart.
+        consensus_label: Optional consensus name shown in the text box.
+        unit_divisor: Convert raw values to display units (e.g., timesteps -> seconds).
+        unit_suffix: Unit suffix for displayed statistics.
+
+    Returns:
+        Tuple[mean_in_display_unit, median_in_display_unit] or None if data is empty.
+    """
+    values = np.asarray(data_to_plot, dtype=np.float64)
+    values = values[np.isfinite(values)]
+    if len(values) == 0:
+        return None
+
+    if unit_divisor == 0:
+        unit_divisor = 1.0
+
+    mean_val = float(np.mean(values) / unit_divisor)
+    median_val = float(np.median(values) / unit_divisor)
+
+    mean_color = 'royalblue'
+    median_color = 'darkorange'
+
+    mean_line = ax.axvline(mean_val, color=mean_color, linewidth=1.8, linestyle='-', alpha=0.9, zorder=5)
+    median_line = ax.axvline(median_val, color=median_color, linewidth=1.8, linestyle='--', alpha=0.9, zorder=5)
+
+    legend = ax.legend(
+        handles=[mean_line, median_line],
+        labels=[f"mean: {mean_val:.2f} {unit_suffix}", f"median: {median_val:.2f} {unit_suffix}"],
+        loc='lower right',
+        fontsize=8,
+        framealpha=0.85,
+    )
+    if legend is not None:
+        texts = legend.get_texts()
+        if len(texts) >= 2:
+            texts[0].set_color(mean_color)
+            texts[1].set_color(median_color)
+
+    return mean_val, median_val
+
+
 def get_main_chain(robots_dict: Dict) -> Optional[pd.DataFrame]:
     """Return the robot chain with the highest TDIFF on its last block.
 
@@ -978,13 +1031,16 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
         block_hashes = globals().get('block_produced_hash', {})
         selected_csv_map = globals().get('selected_csv_map', {})
         saved_any = False
+        saved_paths = []
         for exp_key in radio_map.keys():
             if _get_experiment_subset(loaded, exp_key):
                 _save_experiment_bundle(exp_key, loaded, block_counts, block_hashes, selected_csv_map)
+                saved_paths.append(SAVED_DIR / f"{exp_key}.pkl")
                 saved_any = True
         with out:
             if saved_any:
-                print(f"✓ Saved data to {SAVED_DIR}")
+                for p in saved_paths:
+                    print(f"✓ Saved data to {p}")
             else:
                 print("No data available to save.")
 
@@ -1379,6 +1435,13 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None,
                         sample_x=24.5,
                         sample_fontsize=9,
                     )
+                    _add_distribution_mean_median_annotation(
+                        ax,
+                        data_to_plot,
+                        consensus_label=consensus,
+                        unit_divisor=10.0,
+                        unit_suffix='s',
+                    )
                     ax.set_title(consensus)
 
                 for idx in range(n_consensus, nrows * ncols):
@@ -1444,6 +1507,14 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None,
                 sample_label=f'n={len(data_to_plot):,} receptions',
                 sample_x=24.5,
                 sample_fontsize=10,
+            )
+            consensus_label, _ = _extract_config_info(exp)
+            _add_distribution_mean_median_annotation(
+                ax,
+                data_to_plot,
+                consensus_label=consensus_label if consensus_label is not None else exp,
+                unit_divisor=10.0,
+                unit_suffix='s',
             )
             ax.set_title(title if title is not None else f'Block Reception Distribution - {exp}', fontsize=12)
             
@@ -1557,6 +1628,13 @@ def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', titl
                         sample_x=max(bin_centers) * 0.95,
                         sample_fontsize=9,
                     )
+                    _add_distribution_mean_median_annotation(
+                        ax,
+                        data_to_plot,
+                        consensus_label=consensus,
+                        unit_divisor=10.0,
+                        unit_suffix='s',
+                    )
                     ax.set_title(consensus)
 
                 # Hide unused subplots
@@ -1621,6 +1699,14 @@ def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', titl
                 sample_label=f'n={len(data_to_plot):,} delays',
                 sample_x=max(bin_centers) * 0.95,
                 sample_fontsize=10,
+            )
+            consensus_label, _ = _extract_config_info(exp)
+            _add_distribution_mean_median_annotation(
+                ax,
+                data_to_plot,
+                consensus_label=consensus_label if consensus_label is not None else exp,
+                unit_divisor=10.0,
+                unit_suffix='s',
             )
             ax.set_title(title if title is not None else f'Block Production Delay Distribution - {exp}', fontsize=12)
 
@@ -1785,6 +1871,11 @@ def _create_consensus_boxplot_visualization(
     print(f"\nSummary Statistics ({ylabel}):")
     summary = plot_df.groupby(['consensus', 'num_agents'])[metric_column].agg(['count', 'mean', 'median', 'std', 'min', 'max'])
     print(summary.to_string())
+
+    print(f"\nOverall Summary per Consensus (across all # agents):")
+    overall = plot_df.groupby('consensus')[metric_column].agg(['count', 'mean', 'median', 'std', 'min', 'max'])
+    overall.columns = ['count', 'mean', 'median', 'std', 'min', 'max']
+    display(overall)
 
 
 def show_efficiency_boxplot(save_path=None, dpi=None):
@@ -2076,6 +2167,7 @@ def show_block_production_by_robot(save_path=None, dpi=None):
                             'Orphans': off_chain,
                             'Main Chain % of Producer': (on_chain / total * 100.0) if total > 0 else 0.0,
                             'Share of All Produced %': (total / total_blocks_all_robots * 100.0) if total_blocks_all_robots > 0 else 0.0,
+                            'Main Chain Share of All Produced %': (on_chain / total_blocks_all_robots * 100.0) if total_blocks_all_robots > 0 else 0.0,
                         })
 
                         if total_blocks_all_robots > 0:
@@ -2135,8 +2227,18 @@ def show_block_production_by_robot(save_path=None, dpi=None):
                         (summary_totals['Orphans'] / summary_totals['Total']) * 100.0,
                         0.0,
                     )
+
+                    per_agent_stats = summary_df.groupby('Consensus').agg(
+                        **{
+                            'Block Production per Agent Mean (%)': ('Share of All Produced %', 'mean'),
+                            'Block Production per Agent Median (%)': ('Share of All Produced %', 'median'),
+                            'Main Chain per Agent Mean (%)': ('Main Chain Share of All Produced %', 'mean'),
+                            'Main Chain per Agent Median (%)': ('Main Chain Share of All Produced %', 'median'),
+                        }
+                    )
+
                     display(summary_totals)
-                    display(display_df)
+                    display(per_agent_stats)
 
         btn.on_click(_on_button_click)
         display(widgets.VBox([widgets.HBox([grouped_mode.agents_drop, rep_drop, btn]), preview_out]))
