@@ -128,43 +128,12 @@ run() {
 
 
 ######################################################################
-### run experiment on updated POC
-#EXP=POC5
-#
-## standard values
-#config "TPS" 10
-#config "REPS" 10
-#config "LENGTH" 400
-#config "REP_SEED" "True"
-#loopconfig "debug" "main" "False"
-#loopconfig "debug" "loop" "True"
-#loopconfig "debug" "scs" "True"
-#
-## POC #
-#config "CONSENSUS" "ProofOfConnection"
-#loopconfig "scs" "update" "\"peer_index\""
-#loopconfig "scs" "decay" 50
-#
-## run experiment with increasing range of robots
-#for UTIL in $(seq 5 5 25); do 
-#	#name of the configuration
-#	CFG="ProofOfConnection_${UTIL}"
-#	# set number of robots
-#	config "NUMROBOTS" "${UTIL}"
-#	# run experiment
-#	wait
-#	run "${EXP}/${CFG}" $@
-#done
-
-
-
-####################################################################
-# vary decay on updated POC 50-250 with 5-25 robots
-EXP=POC4_vary_decay
+## run experiment on updated POC
+EXP=POC_updated
 
 # standard values
 config "TPS" 10
-config "REPS" 8
+config "REPS" 10
 config "LENGTH" 400
 config "REP_SEED" "True"
 loopconfig "debug" "main" "False"
@@ -174,86 +143,18 @@ loopconfig "debug" "scs" "True"
 # POC #
 config "CONSENSUS" "ProofOfConnection"
 loopconfig "scs" "update" "\"peer_index\""
+loopconfig "scs" "decay" 50
 
 # run experiment with increasing range of robots
-for UTIL in 25; do 
-	for DEC in 250; do
-		# set update function
-		loopconfig "scs" "decay" "${DEC}"
-		#name of the configuration
-		CFG="${DEC}_${UTIL}"
-		# set number of robots
-		config "NUMROBOTS" "${UTIL}"
-		# run experiment
-		wait
-		run "${EXP}/${CFG}" $@
-	done
-done
-
-config "REPS" 10
-
-
-####################################################################
-# choose Random forger as baseline consensus mechanism
-
-EXP=Random2
-
-loopconfig "scs" "update" "\"none\""
-
-# run experiment with increasing range of robots
-
 for UTIL in $(seq 5 5 25); do 
-
 	#name of the configuration
-
-	CFG="Random_${UTIL}"
-
+	CFG="ProofOfConnection2_${UTIL}"
 	# set number of robots
-
 	config "NUMROBOTS" "${UTIL}"
-
 	# run experiment
-
 	wait
-
 	run "${EXP}/${CFG}" $@
-
 done
-
-####################################################################
-# vary decay on updated POC 300-500 with 5-25 robots
-EXP=POC4_vary_decay
-
-# run experiment with increasing range of robots
-for UTIL in 25; do 
-	for DEC in $(seq 100 50 250); do
-		# set update function
-		loopconfig "scs" "decay" "${DEC}"
-		#name of the configuration
-		CFG="${DEC}_${UTIL}"
-		# set number of robots
-		config "NUMROBOTS" "${UTIL}"
-		# run experiment
-		wait
-		run "${EXP}/${CFG}" $@
-	done
-done
-
-# run experiment with increasing range of robots
-for UTIL in $(seq 25 -5 5); do 
-	for DEC in $(seq 300 50 500); do
-		# set update function
-		loopconfig "scs" "decay" "${DEC}"
-		#name of the configuration
-		CFG="${DEC}_${UTIL}"
-		# set number of robots
-		config "NUMROBOTS" "${UTIL}"
-		# run experiment
-		wait
-		run "${EXP}/${CFG}" $@
-	done
-done
-
 
 
 

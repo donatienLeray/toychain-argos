@@ -52,7 +52,13 @@ class Contract(StateMixin):
             self.trans_reward = int(lp['scs']['trans_reward'])
             self.decay = int(lp['scs']['decay'])
             self.connectivity_update = lp['scs']['update']
-
+        
+        logger.info(f"Initialized smart contract with connectivity update method: {self.connectivity_update}, decay: {self.decay}, transaction reward: {self.trans_reward}")
+        if self.connectivity_update == 'recursive_peer_index':
+            if ('recursion' not in lp['scs'] or int(lp['scs']['recursion']) < 1):
+                warnings.warn("Using 'recursive_peer_index' as connectivity update method without a valid 'recursion' parameter may lead to incorrect connectivity calculations. Please set lp['scs']['recursion'] to a positive integer to specify the number of rounds of recursion for connectivity calculation.")
+            else:
+                logger.info(f"Using 'recursive_peer_index' with {lp['scs']['recursion']} rounds of recursion for connectivity calculation.")
 
     def Hello(self, neighbor):
         """
@@ -160,20 +166,59 @@ class Contract(StateMixin):
         # For each robot
         for robot_id, peers in self.all_peers.items():
             counter = 0
-            # For each peer check ...
-            for peer_id, ts in peers.items():
-                # ... that the peer connection is within the decay period and not a self-connection
-                if peer_id != robot_id and ts > timestamp - self.decay:
-                    # see if connection is reciprocal by checking if this robot is in the peer's list of peers
-                    if self.all_peers.get(peer_id, {}).get(robot_id, -self.decay) > timestamp - self.decay:
-                        counter += 1
-                        
-            # update connectivity value with the count of reciprocal connections
             enode = gen_enode(int(robot_id))
-            self.connectivity[enode] = counter
             
+            # If the connectivity is negative (marking for waiting due to the N/2 +1 rule) wait one round less.
+            if self.connectivity[enode] < 0:
+                self.connectivity[enode] += 1
+                
+            else:
+                # For each peer check ...
+                for peer_id, ts in peers.items():
+                    # ... that the peer connection is within the decay period and not a self-connection
+                    if peer_id != robot_id and ts > timestamp - self.decay:
+                        # see if connection is reciprocal by checking if this robot is in the peer's list of peers
+                        if self.all_peers.get(peer_id, {}).get(robot_id, -self.decay) > timestamp - self.decay:
+                            counter += 1
+
+                # update connectivity value with the count of reciprocal connections
+                self.connectivity[enode] = counter
+        
             
-    
+    def recursive_peer_index(self, block):
+        """
+        Calculate connectivity based on recursive peer connections within decay period.
+        For each robot, counts how many other robots have it as a peer, and how many peers those peers have (within decay window).
+        
+        Args:
+            block: The block object containing the current timestamp.
+        """
+        # call peer_index to get the base connectivity counts
+        self.peer_index(block)  
+        # Get the timestamp from the block
+        timestamp = block.timestamp
+        # Set the number of rounds of recursion to perform (can be adjusted based on desired depth of connectivity calculation)
+        recursion_rounds= int(lp['scs']['recursion']) if 'recursion' in lp['scs'] else 1
+        # Perform the recursive connectivity calculation for the specified number of rounds
+        for rr in range(recursion_rounds):
+            #make a copy of the connectivity dict to reference the base counts while updating
+            base_connectivity = self.connectivity.copy()
+            # For each robot
+            for robot_id, peers in self.all_peers.items():
+                counter = 0
+                # For each peer check ...
+                for peer_id, ts in peers.items():
+                    # ... that the peer connection is within the decay period and not a self-connection
+                    if peer_id != robot_id and ts > timestamp - self.decay:
+                        # see if connection is reciprocal by checking if this robot is in the peer's list of peers
+                        if self.all_peers.get(peer_id, {}).get(robot_id, -self.decay) > timestamp - self.decay:
+                            # Add the peer's connectivity value to the count divided by the number of rounds of recursion to prevent exponential growth of connectivity values
+                            counter += (base_connectivity.get(gen_enode(int(peer_id)), 0) -1) // (rr + 1) #perhaps chage (rr+1) base.connectivity.get(gen_enode(int(peer_id)), 0)
+            
+                # update connectivity value with the count of reciprocal connections plus the connectivity of those peers
+                enode = gen_enode(int(robot_id))
+                self.connectivity[enode] = counter
+
     def none(self, block):
         """
         Placeholder method for a no-op update strategy.

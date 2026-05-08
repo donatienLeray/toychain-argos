@@ -98,9 +98,9 @@ def draw_in_robot():
     else:
         tx_count = int(robot.variables.get_attribute("mempl_size"))
 
-    environment.qt_draw.circle([0,0,0.010], [], 0.100, color_state, True) #inner circle
+    #environment.qt_draw.circle([0,0,0.010], [], 0.100, color_state, True) #outer circle #only intresting if state != block.state
     environment.qt_draw.circle([0,0,0.011], [], 0.075, color_block, True) #middle circle
-    environment.qt_draw.circle([0,0,0.012+0.002*tx_count], [], 0.050, color_mempl, True) #outer circle
+    environment.qt_draw.circle([0,0,0.012], [], 0.050, color_mempl, True) #inner circle 
 
 
 def destroy():

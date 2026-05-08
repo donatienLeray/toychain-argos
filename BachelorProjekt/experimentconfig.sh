@@ -49,7 +49,7 @@ export BLOCKPERIOD=1
 export RUN_TKUSER="False"
 
 # [OTHER]
-export SEED=126
+export SEED=420
 # When True, set SEED to the repetition number for each repetition
 export REP_SEED=True
 export TIMELIMIT=100
