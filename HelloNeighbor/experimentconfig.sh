@@ -47,7 +47,7 @@ export EXPLORER_PORT="8765"
 # [OTHER]
 export SEED=1500
 export TIMELIMIT=500
-export LENGTH=1000
+export LENGTH=100
 export SLEEPTIME=5
 export REPS=5
 export NOTES="Variation of utility of the resource between 100 and 400"
