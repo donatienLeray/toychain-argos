@@ -38,6 +38,7 @@ params['files'] = dict()
 params['consensus'] = dict()
 params['consensus']['module'] = str(os.environ["CONSENSUS"])
 params['consensus']['class'] = str(os.environ["CONSENSUS"])
+params['consensus']['block_period'] = eval(os.environ["BLOCKPERIOD"])
 
 # parameters of the smart contract
 params['scs'] = dict()

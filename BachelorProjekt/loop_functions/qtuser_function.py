@@ -3,8 +3,6 @@
 # /* Import Packages */
 #######################################################################
 import sys, os, importlib, warnings
-# for UML
-import objgraph
 
 mainFolder = os.environ['MAINFOLDER']
 experimentFolder = os.environ['EXPERIMENTFOLDER']
@@ -12,9 +10,6 @@ sys.path += [mainFolder, experimentFolder]
 
 from loop_functions.utils import hash_to_rgb
 from loop_functions.params import params as lp
-from toychain.src.utils.helpers import gen_enode
-from toychain.src.Node import Node
-from toychain.src.Block import Block
 #-----------------------------
 # toychain consensus mechanism
 # import the correct consensus mechanism dynamically
@@ -45,9 +40,6 @@ else: # default
 #-----------------------------
 
 
-lp['generic']['show_rays'] = False
-lp['generic']['show_pos'] = True
-
 # /* Global Variables */
 #######################################################################
 rob_diam   = 0.07/2
@@ -60,31 +52,13 @@ global robot, environment
 print(f"Consensus Mechanism: {ConsensusClass.__name__}")
 print(f"Smart Contract: {State.__name__}")
 
-enodes = [gen_enode(i+1) for i in range(int(lp['generic']['num_robots']))]
-
-#initialize glassnode Genesis Block
-if ConsensusClass.__name__ == 'ProofOfAuthority' or ConsensusClass.__name__ == 'ProofOfWork':
-    GENESIS = Block(0, 0000, [], enodes, 0, 0, 0, nonce = 1, state = State())
-else:
-    GENESIS = Block(0, 0000, [], 0, 0, 0, 0, nonce = 1, state = State())
-
-
-glassnode = Node('0', '127.0.0.1', 1233, ConsensusClass(genesis = GENESIS))
-# draw object reference graph of glassnode (for visualization purposes)
-objgraph.show_refs([glassnode], filename='Node_graph.png')
 #######################################################################
 
 def init():
     pass
     
 def draw_in_world():
-
-    # Update glassnode
-	glassnode.step()
-	if glassnode.custom_timer.time() == 10:
-		glassnode.add_peers(enodes)
-		glassnode.start()
-		glassnode.run_explorer()
+    pass
 	
 def draw_in_robot():
     

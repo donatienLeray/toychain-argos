@@ -77,11 +77,11 @@ def post_step():
         startFlag = True
 
     # Logging of simulation simulation (RAM, CPU, TPS)   
-    if clocks['simlog'].query():
-        RAM = getRAMPercent()
-        CPU = getCPUPercent()
+    #if clocks['simlog'].query():
+    #    RAM = getRAMPercent()
+    #    CPU = getCPUPercent()
     TPS = round(1/(time.time()-logs['simulation'].latest))
-    logs['simulation'].log([TPS, CPU, RAM])
+    logs['simulation'].log([TPS])
 
     # Logging of loop function variables
     logs['loop'].log([])

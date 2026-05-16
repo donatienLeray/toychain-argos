@@ -137,7 +137,7 @@ def init():
     # /* Init web3.py */
     robot.log.info('Initialising Python Geth Console...')
     #w3 = Node(robotID, robotIP, 1233 + int(robotID), ProofOfAuthority(genesis = GENESIS))
-    w3 = Node(robotID, robotIP, 1233 + int(robotID), ConsensusClass(genesis = GENESIS))
+    w3 = Node(robotID, robotIP, 1233 + int(robotID), ConsensusClass(genesis = GENESIS),publish=True)
     robot.log.info(f'Consensus Mechanism: {ConsensusClass.__name__}')
     robot.log.info(f'Smart Contract: {State.__name__}')
 

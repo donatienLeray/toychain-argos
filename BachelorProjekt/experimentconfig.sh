@@ -39,7 +39,7 @@ export TPS=10
 export DENSITY="2"
 
 #export NUMROBOTS=$(echo $NUM1+$NUM2 | bc)
-export NUMROBOTS=5
+export NUMROBOTS=15
 export ARENADIM=$(echo "scale=3 ; sqrt($NUMROBOTS/$DENSITY)" | bc)
 export ARENADIMH=$(echo "scale=3 ; $ARENADIM/2" | bc)
 export STARTDIM=$(echo "scale=3 ; $ARENADIM/5" | bc)
@@ -47,6 +47,13 @@ export STARTDIM=$(echo "scale=3 ; $ARENADIM/5" | bc)
 # [GETH]
 export BLOCKPERIOD=1
 export RUN_TKUSER="False"
+
+# [TOYCHAIN]
+export BLOCKPERIOD=2
+export EXPLORER="True"
+export EXPLORER_PATH="$TOYCHFOLDER/src/plugins/toychain-explorer/"
+export EXPLORER_HOST="localhost"
+export EXPLORER_PORT="8765"
 
 # [OTHER]
 export SEED=42
