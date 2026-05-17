@@ -52,11 +52,11 @@ export EXPLORER_HOST="localhost"
 export EXPLORER_PORT="8765"
 
 # [OTHER]
-export SEED=210
+export SEED=252
 # When True, set SEED to the repetition number for each repetition
 export REP_SEED=True
 export TIMELIMIT=100
-export LENGTH=100
+export LENGTH=400
 export SLEEPTIME=5
 export REPS=10
 export NOTES="just a test"
