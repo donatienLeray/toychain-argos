@@ -5,7 +5,6 @@
 import random, math
 import time, sys, os, json
 import logging
-from hexbytes import HexBytes
 
 mainFolder = os.environ['MAINFOLDER']
 experimentFolder = os.environ['EXPERIMENTFOLDER']
@@ -46,6 +45,10 @@ clocks['block']      = Timer(15*TPS)
 
 global allrobots
 
+#loading bar variables
+global step_count
+step_count = 0
+
 def init():
    
     # Init logfiles for loop function
@@ -70,6 +73,7 @@ def pre_step():
 def post_step():
     global startFlag, clocks, accums
     global RAM, CPU
+    global step_count
 
     if not startFlag:
         startFlag = True
@@ -83,6 +87,17 @@ def post_step():
 
     # # Logging of loop function variables
     # logs['loop'].log([])
+    
+    TPS = round(1/(time.time()-logs['simulation'].latest))
+    logs['simulation'].log([TPS])
+
+    # Logging of loop function variables
+    logs['loop'].log([])
+    
+    # print loading bar with ETA
+    total_steps = int(os.environ['TPS']) * int(os.environ['LENGTH'])
+    loading_bar(total_steps, step_count, TPS=TPS)
+    step_count += 1
 
 def is_experiment_finished():
     pass
