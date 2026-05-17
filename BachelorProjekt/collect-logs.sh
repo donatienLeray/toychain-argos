@@ -51,7 +51,7 @@ cp $EXPERIMENTFOLDER/loop_functions/params.py $LOGSFOLDER/loop_params.py
 cp $EXPERIMENTFOLDER/controllers/params.py $LOGSFOLDER/control_params.py
 
 if [ -d "$EXPLORERDATAFOLDER" ]; then
-  cp -rp "$EXPLORERDATAFOLDER" "$LOGSFOLDER"
+  cp -rp "$EXPLORERDATAFOLDER" "$LOGSFOLDER/toychain_explorer"
 fi
 
 # # Collect geth related logs from docker folder into /logs/

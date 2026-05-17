@@ -135,27 +135,61 @@ run() {
 
 
 ######################################################################
-## run experiment on updated POC
-EXP=POC_test1
+### run experiment on updated POC
+#EXP=POC_test1
+#
+## standard values
+#config "TPS" 10
+#config "REPS" 10
+#config "LENGTH" 100
+#config "REP_SEED" "True"
+#loopconfig "debug" "main" "False"
+#loopconfig "debug" "loop" "True"
+#loopconfig "debug" "scs" "True"
+#
+## POC #
+#config "CONSENSUS" "ProofOfConnection"
+#loopconfig "scs" "update" "\"peer_index\""
+#loopconfig "scs" "decay" 50
+#
+## run experiment with increasing range of robots
+#for UTIL in $(seq 5 5 25); do 
+#	#name of the configuration
+#	CFG="ProofOfConnection2_${UTIL}"
+#	# set number of robots
+#	config "NUMROBOTS" "${UTIL}"
+#	# run experiment
+#	wait
+#	run "${EXP}/${CFG}" $@
+#done
+
+
+
+####################################################################
+# run experiment with different consensus mechanisms
+EXP=compare_consensus
 
 # standard values
 config "TPS" 10
 config "REPS" 10
-config "LENGTH" 100
+config "LENGTH" 400
 config "REP_SEED" "True"
 loopconfig "debug" "main" "False"
 loopconfig "debug" "loop" "True"
 loopconfig "debug" "scs" "True"
 
-# POC #
+
+##########
+# RANDOM #
+##########
 config "CONSENSUS" "ProofOfConnection"
-loopconfig "scs" "update" "\"peer_index\""
+loopconfig "scs" "update" "\"none\""
 loopconfig "scs" "decay" 50
 
 # run experiment with increasing range of robots
 for UTIL in $(seq 5 5 25); do 
 	#name of the configuration
-	CFG="ProofOfConnection2_${UTIL}"
+	CFG="R-PoA_${UTIL}"
 	# set number of robots
 	config "NUMROBOTS" "${UTIL}"
 	# run experiment
@@ -163,57 +197,30 @@ for UTIL in $(seq 5 5 25); do
 	run "${EXP}/${CFG}" $@
 done
 
+###############
+# POA and PoW #
+###############
+loopconfig "scs" "update" "\"peer_index\""
+for consensus in "ProofOfAuthority" "ProofOfWork" "ProofOfConnection"; do
+  	config "CONSENSUS" "$consensus"
 
+	# run experiment with increasing range of robots
+	for UTIL in $(seq 5 5 25); do 
+		#name of the configuration using switch case for consensus name
+		case "$consensus" in
+			"ProofOfAuthority") CFG="PoA_${UTIL}" ;;
+			"ProofOfWork") CFG="PoW_${UTIL}" ;;
+			"ProofOfConnection") CFG="C-PoA_${UTIL}" ;;
+			*) CFG="${consensus}_${UTIL}" ;;
+		esac
+		# set number of robots
+		config "NUMROBOTS" "${UTIL}"
+		# run experiment
+		wait
+		run "${EXP}/${CFG}" $@
+	done
 
-# ####################################################################
-# # run experiment with different consensus mechanisms
-# EXP=compare_consensus
-# 
-# # standard values
-# config "TPS" 10
-# config "REPS" 10
-# config "LENGTH" 400
-# config "REP_SEED" "True"
-# loopconfig "debug" "main" "False"
-# loopconfig "debug" "loop" "True"
-# loopconfig "debug" "scs" "True"
-# 
-# 
-# ##########
-# # RANDOM #
-# ##########
-# config "CONSENSUS" "ProofOfConnection"
-# loopconfig "scs" "update" "\"none\""
-# 
-# # run experiment with increasing range of robots
-# for UTIL in $(seq 5 5 25); do 
-# 	#name of the configuration
-# 	CFG="Random_${UTIL}"
-# 	# set number of robots
-# 	config "NUMROBOTS" "${UTIL}"
-# 	# run experiment
-# 	wait
-# 	run "${EXP}/${CFG}" $@
-# done
-# 
-# ###############
-# # POA and PoW #
-# ###############
-# for consensus in "ProofOfAuthority" "ProofOfWork"; do
-#   	config "CONSENSUS" "$consensus"
-# 
-# 	# run experiment with increasing range of robots
-# 	for UTIL in $(seq 5 5 25); do 
-# 		#name of the configuration
-# 		CFG=${consensus}_${UTIL}
-# 		# set number of robots
-# 		config "NUMROBOTS" "${UTIL}"
-# 		# run experiment
-# 		wait
-# 		run "${EXP}/${CFG}" $@
-# 	done
-# 
-# done
+done
 
 
 
