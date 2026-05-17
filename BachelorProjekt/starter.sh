@@ -36,7 +36,7 @@ envsubst < $ARGOSTEMPLATE > $ARGOSFILE
 echo "+-----------------------------------------------------------+"
 echo "Cleaning logs folder..."
 
-eval $(echo "rm -rf logs/{$(($NUMROBOTS+1))..1000}")
+rm -rf logs/*
 
 if [ "$EXPLORER" = "True" ]; then
     echo "+-----------------------------------------------------------+"

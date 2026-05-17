@@ -9,6 +9,7 @@ source experimentconfig.sh
 
 LOGSFOLDER="$EXPERIMENTFOLDER/logs/"
 DATAFOLDER="$EXPERIMENTFOLDER/results/data/experiment_$1/"
+EXPLORERDATAFOLDER="$MAINFOLDER/toychain/src/plugins/toychain-explorer/data"
 
 # Create the experiment directory
 mkdir -p $LOGSFOLDER $DATAFOLDER
@@ -48,6 +49,10 @@ END
 cp experimentconfig.sh $LOGSFOLDER
 cp $EXPERIMENTFOLDER/loop_functions/params.py $LOGSFOLDER/loop_params.py
 cp $EXPERIMENTFOLDER/controllers/params.py $LOGSFOLDER/control_params.py
+
+if [ -d "$EXPLORERDATAFOLDER" ]; then
+  cp -rp "$EXPLORERDATAFOLDER" "$LOGSFOLDER"
+fi
 
 # # Collect geth related logs from docker folder into /logs/
 # for ID in $(seq 1 $NUMROBOTS); do

@@ -111,6 +111,13 @@ run() {
 		fi
 
 			# Perform experiment
+			# Ensure explorer port is free (stop any local explorer process owned by this user)
+			if [ -n "${MAINFOLDER-}" ] && [ -x "${MAINFOLDER}/tools/stop_explorer_safe.sh" ]; then
+				${MAINFOLDER}/tools/stop_explorer_safe.sh --kill 8765 || true
+			elif [ -x "../tools/stop_explorer_safe.sh" ]; then
+				../tools/stop_explorer_safe.sh --kill 8765 || true
+			fi
+
 			bash starter.sh "${other_args[@]}"
 
 			# Collect data
@@ -129,12 +136,12 @@ run() {
 
 ######################################################################
 ## run experiment on updated POC
-EXP=POC_updated
+EXP=POC_test1
 
 # standard values
 config "TPS" 10
 config "REPS" 10
-config "LENGTH" 400
+config "LENGTH" 100
 config "REP_SEED" "True"
 loopconfig "debug" "main" "False"
 loopconfig "debug" "loop" "True"
