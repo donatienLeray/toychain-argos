@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Set, Callable, NamedTuple
+from io import StringIO
 import os
 import math
 import json
@@ -1142,7 +1143,13 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
                             csv_path = robot / (sel + '.csv')
                             if csv_path.exists():
                                 # CSV files are space-separated, not comma-separated
-                                df = pd.read_csv(csv_path, sep=r'\s+')
+                                if csv_path.name == 'block.csv':
+                                    raw_csv = csv_path.read_text(encoding='utf-8', errors='replace')
+                                    # Replace bracketed payloads like "[x, s, z]" with 0 before parsing.
+                                    sanitized_csv = re.sub(r'\[[^\]\n]*\]', '0', raw_csv)
+                                    df = pd.read_csv(StringIO(sanitized_csv), sep=r'\s+')
+                                else:
+                                    df = pd.read_csv(csv_path, sep=r'\s+')
                                 
                                 # Fix common column name typos
                                 if 'TELEAPSED' in df.columns:
@@ -2446,14 +2453,13 @@ def show_bpa_gini_main_chain_boxplot(save_path=None, dpi=None):
 
 
 def show_disagreement_boxplot(save_path=None, dpi=None):
-    """BPE-style plot of disagreement derived from loaded block observations.
+    """Boxplot showing fraction of observations that refer to main-chain blocks.
 
-    For each run, disagreement is computed from loaded_blocks as:
-            100 * ((total block observations / (globally agreed blocks * number of robots)) - 1)
-        where a globally agreed block is one observed by every robot in that run.
+    Metric per run (presented as percentage):
+        100 * (observations_of_mainchain_blocks / total_number_of_observations)
 
-    A toggle switch named "trim" lets you restrict analysis to observations up to
-    the timestamp of the last observation that made a block fully accepted.
+    A toggle switch named "trim" lets you restrict analysis to observations up
+    to the timestamp of the last observation that made a block fully accepted.
     """
 
     if 'loaded_blocks' not in globals() or not globals().get('loaded_blocks'):
@@ -2520,26 +2526,56 @@ def show_disagreement_boxplot(save_path=None, dpi=None):
                         continue
 
                 total_observations = int(len(filtered))
-                globally_agreed_blocks = 0
 
-                for _, block_df in filtered.groupby('block_hash', sort=False):
-                    block_observers = set(block_df['observer_id'].dropna().astype(str).values)
-                    if block_observers == observer_ids:
-                        globally_agreed_blocks += 1
+                # Determine main-chain block hashes for this run using the best robot
+                # chain (highest last-block TDIFF). We try to match any hash-like
+                # column in the robot CSVs to the observed block_hash values.
+                observations_set = set(filtered['block_hash'].dropna().astype(str).unique())
 
-                if globally_agreed_blocks <= 0:
+                loaded_data = globals().get('loaded_data', {})
+                robots_dict = loaded_data.get(exp_key, {}).get(rep_name, {}) if isinstance(loaded_data, dict) else {}
+                main_chain_df = get_main_chain(robots_dict) if robots_dict else None
+
+                main_hashes: Set[str] = set()
+                if isinstance(main_chain_df, pd.DataFrame):
+                    # Candidate column names that often contain block hashes
+                    candidates = ['HASH', 'hash', 'block_hash', 'BLOCK_HASH', 'Hash', 'hash_id']
+                    # First try well-known names
+                    for c in candidates:
+                        if c in main_chain_df.columns:
+                            vals = main_chain_df[c].astype(str).dropna().unique()
+                            intersect = set(vals).intersection(observations_set)
+                            if intersect:
+                                main_hashes.update(intersect)
+                    # If still empty, scan all object-like columns and pick any overlap
+                    if not main_hashes:
+                        for c in main_chain_df.columns:
+                            if main_chain_df[c].dtype == object or pd.api.types.is_string_dtype(main_chain_df[c]):
+                                vals = main_chain_df[c].astype(str).dropna().unique()
+                                intersect = set(vals).intersection(observations_set)
+                                if intersect:
+                                    # choose this column's overlap
+                                    main_hashes.update(intersect)
+                                    break
+
+                # If we couldn't infer main-chain hashes, skip this run
+                if not main_hashes:
                     continue
 
-                ratio = total_observations / float(globally_agreed_blocks * len(observer_ids))
-                disagreement = 100.0 * (ratio - 1.0)
+                # Count observations that refer to main-chain blocks
+                obs_mainchain_count = int(filtered['block_hash'].astype(str).isin(main_hashes).sum())
+                if total_observations <= 0:
+                    continue
+
+                mainchain_obs_pct = 100.0 * (obs_mainchain_count / float(total_observations))
 
                 rows.append({
                     'consensus': consensus,
                     'num_agents': num_agents,
                     'rep': rep_name,
-                    'disagreement': disagreement,
+                    'mainchain_obs_pct': mainchain_obs_pct,
+                    'observations_of_mainchain': int(obs_mainchain_count),
                     'total_observations': total_observations,
-                    'globally_agreed_blocks': int(globally_agreed_blocks),
                     'n_robots': int(len(observer_ids)),
                 })
 
@@ -2560,14 +2596,14 @@ def show_disagreement_boxplot(save_path=None, dpi=None):
             plot_df = pd.DataFrame(_compute_rows(trim_enabled=trim_enabled))
             _create_consensus_boxplot_visualization(
                 plot_df=plot_df,
-                metric_column='disagreement',
-                ylabel='Disagreement (%)',
-                plot_title='Block Observation Disagreement (%)' + (' [trimmed]' if trim_enabled else ''),
-                comparison_title='Disagreement Comparison Across Consensus Algorithms (%)' + (' [trimmed]' if trim_enabled else ''),
-                no_data_message='No disagreement data found. Ensure block observation JSON files are loaded.',
+                metric_column='mainchain_obs_pct',
+                ylabel='Main-chain Observations (%)',
+                plot_title='Main-chain Observation Fraction (%)' + (' [trimmed]' if trim_enabled else ''),
+                comparison_title='Main-chain Observation Comparison Across Consensus Algorithms (%)' + (' [trimmed]' if trim_enabled else ''),
+                no_data_message='No main-chain observation data found. Ensure block observation JSON files and CSVs are loaded.',
                 save_path=save_path,
                 dpi=dpi,
-                plot_name='disagreement_boxplot_trimmed' if trim_enabled else 'disagreement_boxplot',
+                plot_name='mainchain_obs_boxplot_trimmed' if trim_enabled else 'mainchain_obs_boxplot',
             )
 
     def _on_trim_toggle(change):
