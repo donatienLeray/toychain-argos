@@ -39,7 +39,7 @@ export TPS=10
 export DENSITY="2"
 
 #export NUMROBOTS=$(echo $NUM1+$NUM2 | bc)
-export NUMROBOTS=5
+export NUMROBOTS=25
 export ARENADIM=$(echo "scale=3 ; sqrt($NUMROBOTS/$DENSITY)" | bc)
 export ARENADIMH=$(echo "scale=3 ; $ARENADIM/2" | bc)
 export STARTDIM=$(echo "scale=3 ; $ARENADIM/5" | bc)
@@ -52,7 +52,7 @@ export EXPLORER_HOST="localhost"
 export EXPLORER_PORT="8765"
 
 # [OTHER]
-export SEED=252
+export SEED=420
 # When True, set SEED to the repetition number for each repetition
 export REP_SEED=True
 export TIMELIMIT=100
