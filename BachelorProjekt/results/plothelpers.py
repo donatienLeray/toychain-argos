@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Set, Callable, NamedTuple
 import os
 import math
+import json
 import pickle
 import re
 
@@ -491,13 +492,16 @@ class ExperimentPicker:
         globals()['loaded_data'] = bundle.get('loaded_data', {})
         globals()['block_production_counts'] = bundle.get('block_production_counts', {})
         globals()['block_produced_hash'] = bundle.get('block_produced_hash', {})
+        globals()['loaded_blocks'] = bundle.get('loaded_blocks', {})
         globals()['selected_csv_map'] = bundle.get('selected_csv_map', {})
 
         with self.output:
             self.output.clear_output()
             total_robots = sum(len(robots) for exp_data in globals()['loaded_data'].values() for robots in exp_data.values())
+            total_observed_blocks = sum(len(blocks) for exp_data in globals().get('loaded_blocks', {}).values() for blocks in exp_data.values())
             print(f"✓ Fast-loaded {exp_key} from {SAVED_DIR}")
             print(f"  - {total_robots} robot datasets")
+            print(f"  - {total_observed_blocks:,} observed block hashes")
 
 
 # Convenience function for notebook
@@ -904,12 +908,13 @@ def _get_experiment_subset(data: Dict, exp_key: str) -> Dict:
     return {k: v for k, v in data.items() if k == exp_key or k.startswith(f"{exp_key}/")}
 
 
-def _save_experiment_bundle(exp_key: str, loaded: Dict, block_counts: Dict, block_hashes: Dict, selected_csv_map: Dict):
+def _save_experiment_bundle(exp_key: str, loaded: Dict, block_counts: Dict, block_hashes: Dict, loaded_blocks: Dict, selected_csv_map: Dict):
     SAVED_DIR.mkdir(parents=True, exist_ok=True)
     bundle = {
         'loaded_data': _get_experiment_subset(loaded, exp_key),
         'block_production_counts': _get_experiment_subset(block_counts, exp_key),
         'block_produced_hash': _get_experiment_subset(block_hashes, exp_key),
+        'loaded_blocks': _get_experiment_subset(loaded_blocks, exp_key),
         'selected_csv_map': {exp_key: selected_csv_map.get(exp_key)} if selected_csv_map else {},
     }
     with open(SAVED_DIR / f"{exp_key}.pkl", 'wb') as f:
@@ -922,6 +927,38 @@ def _load_experiment_bundle(exp_key: str) -> Optional[Dict]:
         return None
     with open(path, 'rb') as f:
         return pickle.load(f)
+
+
+def _load_block_observations(block_observations_path: Path) -> Dict[str, pd.DataFrame]:
+    """Load observed blocks from a toychain_explorer/observations.json file.
+
+    Returns a mapping keyed by block hash. Each value is a DataFrame containing
+    one row per observation event, including the observing robot id and receipt time.
+    """
+    if not block_observations_path.exists():
+        return {}
+
+    try:
+        with open(block_observations_path, 'r') as f:
+            records = json.load(f)
+    except Exception:
+        return {}
+
+    if not isinstance(records, list) or not records:
+        return {}
+
+    df = pd.DataFrame(records)
+    if df.empty or 'block_hash' not in df.columns:
+        return {}
+
+    df['block_hash'] = df['block_hash'].astype(str)
+    if 'observer_id' in df.columns:
+        df['observer_id'] = df['observer_id'].astype(str)
+
+    block_frames = {}
+    for block_hash, block_df in df.groupby('block_hash', sort=False):
+        block_frames[str(block_hash)] = block_df.reset_index(drop=True).copy()
+    return block_frames
 
 def create_csv_picker_for_loaded_paths(picker, data_dir=None):
     """For each path in `picker.last_loaded` (each either `data/exp` or `data/exp/cfg`),
@@ -1029,12 +1066,13 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
         loaded = globals().get('loaded_data', {})
         block_counts = globals().get('block_production_counts', {})
         block_hashes = globals().get('block_produced_hash', {})
+        loaded_blocks = globals().get('loaded_blocks', {})
         selected_csv_map = globals().get('selected_csv_map', {})
         saved_any = False
         saved_paths = []
         for exp_key in radio_map.keys():
             if _get_experiment_subset(loaded, exp_key):
-                _save_experiment_bundle(exp_key, loaded, block_counts, block_hashes, selected_csv_map)
+                _save_experiment_bundle(exp_key, loaded, block_counts, block_hashes, loaded_blocks, selected_csv_map)
                 saved_paths.append(SAVED_DIR / f"{exp_key}.pkl")
                 saved_any = True
         with out:
@@ -1055,6 +1093,7 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
             loaded = {}
             block_production_counts = {}
             block_produced_hash = {}
+            loaded_blocks = {}
             # Record the chosen csv basename per experiment so other helpers can know which was chosen
             selected_csv_map = {}
 
@@ -1089,10 +1128,14 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
                         run_dict = loaded.setdefault(base_key, {}).setdefault(run.name, {})
                         count_dict = block_production_counts.setdefault(base_key, {}).setdefault(run.name, {})
                         hash_dict = block_produced_hash.setdefault(base_key, {}).setdefault(run.name, {})
+                        blocks_dict = loaded_blocks.setdefault(base_key, {}).setdefault(run.name, {})
                         # robot dirs inside run — numeric names starting at 1; exclude '0'
                         robots = sorted([d for d in run.iterdir() if d.is_dir() and d.name.isdigit() and int(d.name) != 0], key=lambda p: int(p.name))
                         if not robots:
                             continue
+
+                        block_observations_path = run / 'toychain_explorer' / 'observations.json'
+                        blocks_dict.update(_load_block_observations(block_observations_path))
 
                         for robot in robots:
                             robot_key = int(robot.name)
@@ -1132,6 +1175,7 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
             globals()['loaded_data'] = loaded
             globals()['block_production_counts'] = block_production_counts
             globals()['block_produced_hash'] = block_produced_hash
+            globals()['loaded_blocks'] = loaded_blocks
             globals()['selected_csv_map'] = selected_csv_map
             
             out.clear_output()
@@ -1139,9 +1183,11 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
                 if loaded:
                     total_robots = sum(len(robots) for exp_data in loaded.values() for robots in exp_data.values())
                     total_blocks = sum(count for exp_data in block_production_counts.values() for robots in exp_data.values() for count in robots.values())
+                    total_observed_blocks = sum(len(blocks) for exp_data in loaded_blocks.values() for blocks in exp_data.values())
                     print(f"✓ Data loaded successfully!")
                     print(f"  - {total_robots} robot datasets")
                     print(f"  - {total_blocks:,} total blocks produced")
+                    print(f"  - {total_observed_blocks:,} observed block hashes")
                     save_btn.layout.display = 'block'
                 else:
                     print("❌ Error: No data was loaded. Please check your experiment selection and try again.")
@@ -1276,6 +1322,102 @@ def show_loaded_preview():
         preview_out=preview_out,
         update_callback=_update_rep_robot_cols,
     )
+
+
+def show_loaded_blocks_preview():
+    """Display a preview of loaded block observations with experiment, run, and block-hash filters."""
+    if 'loaded_blocks' not in globals() or not globals().get('loaded_blocks'):
+        print("No `loaded_blocks` available. Use the picker and click Load data first.")
+        return
+
+    loaded_blocks = globals().get('loaded_blocks', {})
+    exp_choices = sorted(loaded_blocks.keys())
+    exp_drop = widgets.Dropdown(options=exp_choices, description='Experiment:', value=exp_choices[0] if exp_choices else None)
+    run_drop = widgets.Dropdown(options=['All'], description='Run:', value='All')
+    block_drop = widgets.Dropdown(options=['All'], description='Block hash:', value='All')
+    col_drop = widgets.Dropdown(options=['All'], description='Columns:', value='All')
+    preview_out = widgets.Output()
+
+    def _collect_frames():
+        exp = exp_drop.value
+        frames = []
+        for run, blocks in loaded_blocks.get(exp, {}).items():
+            if run_drop.value != 'All' and run != run_drop.value:
+                continue
+            for block_hash, df in blocks.items():
+                if block_drop.value != 'All' and block_hash != block_drop.value:
+                    continue
+                if isinstance(df, pd.DataFrame):
+                    df2 = df.copy()
+                    if 'block_hash' not in df2.columns:
+                        df2['block_hash'] = block_hash
+                    df2['RUN'] = run
+                    frames.append((block_hash, run, df2))
+        return frames
+
+    def _update_controls(*_):
+        exp = exp_drop.value
+        runs = sorted(loaded_blocks.get(exp, {}).keys())
+        run_options = ['All'] + runs
+        run_drop.options = run_options
+        if run_drop.value not in run_options:
+            run_drop.value = 'All'
+
+        block_hashes = []
+        for run, blocks in loaded_blocks.get(exp, {}).items():
+            if run_drop.value != 'All' and run != run_drop.value:
+                continue
+            block_hashes.extend(blocks.keys())
+        block_options = ['All'] + sorted(set(block_hashes))
+        block_drop.options = block_options
+        if block_drop.value not in block_options:
+            block_drop.value = 'All'
+
+        frames = _collect_frames()
+        columns = set()
+        for _, _, df in frames:
+            columns.update(df.columns)
+        col_options = ['All'] + sorted(columns)
+        col_drop.options = col_options
+        if col_drop.value not in col_options:
+            col_drop.value = 'All'
+
+    def _preview(_):
+        with preview_out:
+            preview_out.clear_output()
+            frames = _collect_frames()
+
+            if not frames:
+                print(f'No block observations found for {exp_drop.value} with selected filters')
+                return
+
+            combined = pd.concat([df for _, _, df in frames], ignore_index=True)
+            combined['EXP'] = exp_drop.value
+
+            if col_drop.value != 'All':
+                cols_to_show = [col_drop.value, 'EXP', 'RUN', 'block_hash']
+                cols_to_show = [c for c in cols_to_show if c in combined.columns]
+                print(f'Combined {combined.shape[0]} rows from {len(frames)} block datasets - showing column: {col_drop.value}')
+                display(combined[cols_to_show].head())
+            else:
+                print(f'Combined {combined.shape[0]} rows from {len(frames)} block datasets')
+                display(combined.head())
+
+            summary = pd.DataFrame(
+                [(run, block_hash, len(df)) for block_hash, run, df in frames],
+                columns=['RUN', 'BLOCK_HASH', 'ROWS'],
+            )
+            display(summary.sort_values(['RUN', 'BLOCK_HASH']).reset_index(drop=True))
+
+    btn = widgets.Button(description='Preview', button_style='primary')
+    btn.on_click(_preview)
+
+    exp_drop.observe(_update_controls, names='value')
+    run_drop.observe(_update_controls, names='value')
+    block_drop.observe(_update_controls, names='value')
+    _update_controls()
+
+    display(widgets.VBox([widgets.HBox([exp_drop, run_drop, block_drop, col_drop, btn]), preview_out]))
 
 
 def show_block_production_summary():
@@ -2301,6 +2443,142 @@ def show_bpa_gini_main_chain_boxplot(save_path=None, dpi=None):
         dpi=dpi,
         plot_name='bpi_gini_main_chain_boxplot',
     )
+
+
+def show_disagreement_boxplot(save_path=None, dpi=None):
+    """BPE-style plot of disagreement derived from loaded block observations.
+
+    For each run, disagreement is computed from loaded_blocks as:
+            100 * ((total block observations / (globally agreed blocks * number of robots)) - 1)
+        where a globally agreed block is one observed by every robot in that run.
+
+    A toggle switch named "trim" lets you restrict analysis to observations up to
+    the timestamp of the last observation that made a block fully accepted.
+    """
+
+    if 'loaded_blocks' not in globals() or not globals().get('loaded_blocks'):
+        print("No `loaded_blocks` available. Use the picker and click Load data first.")
+        return
+
+    loaded_blocks = globals().get('loaded_blocks', {})
+    exp_choices = sorted(loaded_blocks.keys())
+
+    def _compute_rows(trim_enabled=False):
+        rows = []
+
+        for exp_key in exp_choices:
+            consensus, num_agents = _extract_config_info(exp_key)
+            if consensus is None or num_agents is None:
+                print(f"Skipping {exp_key}: doesn't match consensus_number pattern")
+                continue
+
+            for rep_name, blocks_dict in loaded_blocks.get(exp_key, {}).items():
+                if not isinstance(blocks_dict, dict) or not blocks_dict:
+                    continue
+
+                block_frames = [df for df in blocks_dict.values() if isinstance(df, pd.DataFrame) and not df.empty]
+                if not block_frames:
+                    continue
+
+                combined = pd.concat(block_frames, ignore_index=True)
+                if 'block_hash' not in combined.columns or 'observer_id' not in combined.columns:
+                    continue
+
+                combined = combined.copy()
+                combined['block_hash'] = combined['block_hash'].astype(str)
+                combined['observer_id'] = combined['observer_id'].astype(str)
+
+                observer_ids = set(combined['observer_id'].dropna().astype(str).values)
+                if not observer_ids:
+                    continue
+
+                filtered = combined
+
+                if trim_enabled:
+                    if 'received_at' not in combined.columns:
+                        continue
+
+                    combined['_received_at_num'] = pd.to_numeric(combined['received_at'], errors='coerce')
+                    fully_accepted_times = []
+
+                    for _, block_df in combined.groupby('block_hash', sort=False):
+                        block_observers = set(block_df['observer_id'].dropna().astype(str).values)
+                        if block_observers == observer_ids:
+                            max_received = block_df['_received_at_num'].max(skipna=True)
+                            if pd.notna(max_received):
+                                fully_accepted_times.append(float(max_received))
+
+                    if not fully_accepted_times:
+                        continue
+
+                    cutoff = max(fully_accepted_times)
+                    filtered = combined[
+                        combined['_received_at_num'].notna() & (combined['_received_at_num'] <= cutoff)
+                    ].copy()
+
+                    if filtered.empty:
+                        continue
+
+                total_observations = int(len(filtered))
+                globally_agreed_blocks = 0
+
+                for _, block_df in filtered.groupby('block_hash', sort=False):
+                    block_observers = set(block_df['observer_id'].dropna().astype(str).values)
+                    if block_observers == observer_ids:
+                        globally_agreed_blocks += 1
+
+                if globally_agreed_blocks <= 0:
+                    continue
+
+                ratio = total_observations / float(globally_agreed_blocks * len(observer_ids))
+                disagreement = 100.0 * (ratio - 1.0)
+
+                rows.append({
+                    'consensus': consensus,
+                    'num_agents': num_agents,
+                    'rep': rep_name,
+                    'disagreement': disagreement,
+                    'total_observations': total_observations,
+                    'globally_agreed_blocks': int(globally_agreed_blocks),
+                    'n_robots': int(len(observer_ids)),
+                })
+
+        return rows
+
+    trim_toggle = widgets.ToggleButton(
+        value=False,
+        description='trim: OFF',
+        button_style='',
+        tooltip='Trim to observations up to the last full-acceptance event',
+        icon='cut',
+    )
+    preview_out = widgets.Output()
+
+    def _render(trim_enabled):
+        with preview_out:
+            preview_out.clear_output()
+            plot_df = pd.DataFrame(_compute_rows(trim_enabled=trim_enabled))
+            _create_consensus_boxplot_visualization(
+                plot_df=plot_df,
+                metric_column='disagreement',
+                ylabel='Disagreement (%)',
+                plot_title='Block Observation Disagreement (%)' + (' [trimmed]' if trim_enabled else ''),
+                comparison_title='Disagreement Comparison Across Consensus Algorithms (%)' + (' [trimmed]' if trim_enabled else ''),
+                no_data_message='No disagreement data found. Ensure block observation JSON files are loaded.',
+                save_path=save_path,
+                dpi=dpi,
+                plot_name='disagreement_boxplot_trimmed' if trim_enabled else 'disagreement_boxplot',
+            )
+
+    def _on_trim_toggle(change):
+        enabled = bool(change['new'])
+        trim_toggle.description = f"trim: {'ON' if enabled else 'OFF'}"
+        trim_toggle.button_style = 'success' if enabled else ''
+        _render(enabled)
+
+    trim_toggle.observe(_on_trim_toggle, names='value')
+    display(widgets.HBox([trim_toggle]), preview_out)
+    _render(False)
 
 
 def show_block_production_by_robot(save_path=None, dpi=None):
