@@ -39,20 +39,20 @@ export TPS=10
 export DENSITY="2"
 
 #export NUMROBOTS=$(echo $NUM1+$NUM2 | bc)
-export NUMROBOTS=25
+export NUMROBOTS=10
 export ARENADIM=$(echo "scale=3 ; sqrt($NUMROBOTS/$DENSITY)" | bc)
 export ARENADIMH=$(echo "scale=3 ; $ARENADIM/2" | bc)
 export STARTDIM=$(echo "scale=3 ; $ARENADIM/5" | bc)
 
 # [TOYCHAIN]
 export BLOCKPERIOD=2
-export EXPLORER="True"
+export EXPLORER=False
 export EXPLORER_PATH="$TOYCHFOLDER/src/plugins/toychain-explorer/"
 export EXPLORER_HOST="localhost"
 export EXPLORER_PORT="8765"
 
 # [OTHER]
-export SEED=420
+export SEED=42
 # When True, set SEED to the repetition number for each repetition
 export REP_SEED=True
 export TIMELIMIT=100

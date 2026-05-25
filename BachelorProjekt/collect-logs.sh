@@ -10,6 +10,8 @@ source experimentconfig.sh
 LOGSFOLDER="$EXPERIMENTFOLDER/logs/"
 DATAFOLDER="$EXPERIMENTFOLDER/results/data/experiment_$1/"
 EXPLORERDATAFOLDER="$MAINFOLDER/toychain/src/plugins/toychain-explorer/data"
+LOCAL_EXPLORER_FOLDER="$EXPERIMENTFOLDER/logs/toychain_explorer"
+PIDFILE="$EXPERIMENTFOLDER/logs/explorer.pid"
 
 # Create the experiment directory
 mkdir -p $LOGSFOLDER $DATAFOLDER
@@ -50,7 +52,45 @@ cp experimentconfig.sh $LOGSFOLDER
 cp $EXPERIMENTFOLDER/loop_functions/params.py $LOGSFOLDER/loop_params.py
 cp $EXPERIMENTFOLDER/controllers/params.py $LOGSFOLDER/control_params.py
 
-if [ -d "$EXPLORERDATAFOLDER" ]; then
+## Prefer the newest observations.json between the per-experiment local
+## folder and the plugin data folder. If both exist, choose the newer
+## file by modification time. If only one exists, copy that one. When
+## falling back to the plugin data folder, wait briefly for the server
+## (if listed in $PIDFILE) to exit so it can write its final snapshot.
+LOCAL_JSON="$LOCAL_EXPLORER_FOLDER/observations.json"
+PLUGIN_JSON="$EXPLORERDATAFOLDER/observations.json"
+
+if [ -f "$LOCAL_JSON" ] && [ -f "$PLUGIN_JSON" ]; then
+  if [ "$LOCAL_JSON" -nt "$PLUGIN_JSON" ]; then
+    cp -rp "$LOCAL_EXPLORER_FOLDER" "$LOGSFOLDER/toychain_explorer"
+  else
+    if [ -f "$PIDFILE" ]; then
+      pid=$(cat "$PIDFILE" 2>/dev/null || true)
+      if [ -n "$pid" ]; then
+        for i in $(seq 1 20); do
+          if ! kill -0 "$pid" 2>/dev/null; then
+            break
+          fi
+          sleep 0.5
+        done
+      fi
+    fi
+    cp -rp "$EXPLORERDATAFOLDER" "$LOGSFOLDER/toychain_explorer"
+  fi
+elif [ -d "$LOCAL_EXPLORER_FOLDER" ]; then
+  cp -rp "$LOCAL_EXPLORER_FOLDER" "$LOGSFOLDER/toychain_explorer"
+elif [ -d "$EXPLORERDATAFOLDER" ]; then
+  if [ -f "$PIDFILE" ]; then
+    pid=$(cat "$PIDFILE" 2>/dev/null || true)
+    if [ -n "$pid" ]; then
+      for i in $(seq 1 20); do
+        if ! kill -0 "$pid" 2>/dev/null; then
+          break
+        fi
+        sleep 0.5
+      done
+    fi
+  fi
   cp -rp "$EXPLORERDATAFOLDER" "$LOGSFOLDER/toychain_explorer"
 fi
 

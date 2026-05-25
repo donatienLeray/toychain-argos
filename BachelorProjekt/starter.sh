@@ -39,6 +39,13 @@ echo "Cleaning logs folder..."
 rm -rf logs/*
 
 if [ "$EXPLORER" = "True" ]; then
+    unset TOYCHAIN_EXPLORER_LOCAL_DIR
+else
+    export TOYCHAIN_EXPLORER_LOCAL_DIR="$EXPERIMENTFOLDER/logs/toychain_explorer"
+    mkdir -p "$TOYCHAIN_EXPLORER_LOCAL_DIR"
+fi
+
+if [ "$EXPLORER" = "True" ]; then
     echo "+-----------------------------------------------------------+"
     echo "Starting Toychain explorer at http://${EXPLORER_HOST}:${EXPLORER_PORT}"
     echo "+-----------------------------------------------------------+"
@@ -46,7 +53,10 @@ if [ "$EXPLORER" = "True" ]; then
     python3 "$EXPLORER_PATH/server.py" --host "$EXPLORER_HOST" --port "$EXPLORER_PORT" &
 
     EXPLORER_PID=$!
-    trap "kill $EXPLORER_PID 2>/dev/null" EXIT
+    # record pid so other scripts can detect the running explorer
+    echo "$EXPLORER_PID" > "$EXPERIMENTFOLDER/logs/explorer.pid"
+    # on exit, terminate explorer and wait for it to finish (so snapshot is written)
+    trap "kill $EXPLORER_PID 2>/dev/null; wait $EXPLORER_PID 2>/dev/null || true; rm -f '$EXPERIMENTFOLDER/logs/explorer.pid' 2>/dev/null" EXIT
 fi
 
 
