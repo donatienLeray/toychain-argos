@@ -165,41 +165,44 @@ run() {
 
 
 
-#####################################################################
-## run experiment with different consensus mechanisms
-#EXP=compare_consensus
-#
-## standard values
-#config "TPS" 10
-#config "REPS" 10
-#config "LENGTH" 400
-#config "REP_SEED" "True"
-#loopconfig "debug" "main" "False"
-#loopconfig "debug" "loop" "True"
-#loopconfig "debug" "scs" "True"
-#
-#
-###########
-## RANDOM #
-###########
-#config "CONSENSUS" "ProofOfConnection"
-#loopconfig "scs" "update" "\"none\""
-#loopconfig "scs" "decay" 50
-#
-## run experiment with increasing range of robots
-#for UTIL in $(seq 5 5 25); do 
-#	#name of the configuration
-#	CFG="R-PoA_${UTIL}"
-#	# set number of robots
-#	config "NUMROBOTS" "${UTIL}"
-#	# run experiment
-#	wait
-#	run "${EXP}/${CFG}" $@
-#done
-#
-################
-## POA and PoW #
-################
+####################################################################
+# run experiment with different consensus mechanisms
+EXP=compare_consensus_2_test
+
+# Explorer
+config "EXPLORER" "False"
+
+# standard values
+config "TPS" 10
+config "REPS" 10
+config "LENGTH" 400
+config "REP_SEED" "True"
+loopconfig "debug" "main" "False"
+loopconfig "debug" "loop" "True"
+loopconfig "debug" "scs" "True"
+
+
+##########
+# RANDOM #
+##########
+config "CONSENSUS" "ProofOfConnection"
+loopconfig "scs" "update" "\"no_update\""
+loopconfig "scs" "decay" 50
+
+# run experiment with increasing range of robots
+for UTIL in $(seq 5 5 25); do 
+	#name of the configuration
+	CFG="R-PoA_${UTIL}"
+	# set number of robots
+	config "NUMROBOTS" "${UTIL}"
+	# run experiment
+	wait
+	run "${EXP}/${CFG}" $@
+done
+
+####################
+## POA,PoW and PoC #
+####################
 #loopconfig "scs" "update" "\"peer_index\""
 #for consensus in "ProofOfAuthority" "ProofOfWork" "ProofOfConnection"; do
 #  	config "CONSENSUS" "$consensus"
@@ -221,38 +224,38 @@ run() {
 #	done
 #
 #done
+
+
+
+
+##
+## DEFINE EXPERIMENT
+#EXP=test_logging
 #
-
-
-
+## standard values
+#config "TPS" 10
+#config "REPS" 10
+#config "LENGTH" 400
+#config "REP_SEED" "True"
+#config "CONSENSUS" "ProofOfConnection"
+#loopconfig "debug" "main" "False"
+#loopconfig "debug" "loop" "True"
+#loopconfig "scs" "update" "\"peer_index\""
+#loopconfig "scs" "decay" 200
+## Explorer
+#config "EXPLORER" "False"
 #
-# DEFINE EXPERIMENT
-EXP=test_logging
-
-# standard values
-config "TPS" 10
-config "REPS" 10
-config "LENGTH" 400
-config "REP_SEED" "True"
-config "CONSENSUS" "ProofOfConnection"
-loopconfig "debug" "main" "False"
-loopconfig "debug" "loop" "True"
-loopconfig "scs" "update" "\"peer_index\""
-loopconfig "scs" "decay" 200
-# Explorer
-config "EXPLORER" "False"
-
-# run experiment with increasing range of robots
-for AGT in $(seq 5 5 25); do 
-	# set number of robots
-	config "NUMROBOTS" "${AGT}"	
-	#name of the configuration
-	CFG="ProofOfConnection2_${AGT}"
-	# run experiment
-	wait
-	run "${EXP}/${CFG}" $@
-
-done
+## run experiment with increasing range of robots
+#for AGT in $(seq 5 5 25); do 
+#	# set number of robots
+#	config "NUMROBOTS" "${AGT}"	
+#	#name of the configuration
+#	CFG="ProofOfConnection2_${AGT}"
+#	# run experiment
+#	wait
+#	run "${EXP}/${CFG}" $@
+#
+#done
 
 
 ## DEFINE EXPERIMENT
