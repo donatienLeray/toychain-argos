@@ -167,7 +167,7 @@ run() {
 
 ####################################################################
 # run experiment with different consensus mechanisms
-EXP=compare_consensus_2_test
+EXP=R-PoA
 
 # Explorer
 config "EXPLORER" "False"

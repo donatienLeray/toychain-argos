@@ -1767,6 +1767,134 @@ def show_reception_mean_overview(title=None, xlabel='Number of Agents', ylabel='
     )
 
 
+def show_block_propagation_delay(threshold=0.8, title=None, xlabel='Number of Agents', ylabel='Propagation Delay [s]', save_path=None, dpi=None):
+    """Compute and plot block propagation delay: time from creation until >= threshold fraction of agents observed the block.
+
+    Args:
+        threshold: fraction (0-1) of agents that must observe the block (default 0.8)
+    """
+    if 'loaded_blocks' not in globals() or not globals().get('loaded_blocks'):
+        print("No `loaded_blocks` available. Use the picker and click Load data first.")
+        return
+
+    loaded_blocks = globals().get('loaded_blocks', {})
+    loaded_data = globals().get('loaded_data', {})
+    exp_choices = sorted(loaded_blocks.keys())
+
+    rows = []
+
+    for exp_key in exp_choices:
+        consensus, num_agents = _extract_config_info(exp_key)
+        if consensus is None or num_agents is None:
+            print(f"Skipping {exp_key}: doesn't match consensus_number pattern")
+            continue
+
+        for rep_name, blocks_dict in loaded_blocks.get(exp_key, {}).items():
+            if not isinstance(blocks_dict, dict) or not blocks_dict:
+                continue
+
+            # build creation time map for blocks in this run from loaded_data robot CSVs
+            creation_map = {}
+            run_data = loaded_data.get(exp_key, {}).get(rep_name, {})
+            chain_frames = [df for df in run_data.values() if isinstance(df, pd.DataFrame) and not df.empty]
+            if chain_frames:
+                combined_chain = pd.concat(chain_frames, ignore_index=True)
+                if 'HASH' in combined_chain.columns and 'TIMESTAMP' in combined_chain.columns:
+                    combined_chain = combined_chain.dropna(subset=['HASH', 'TIMESTAMP']).copy()
+                    combined_chain['HASH'] = combined_chain['HASH'].astype(str)
+                    combined_chain['_ts'] = pd.to_numeric(combined_chain['TIMESTAMP'], errors='coerce')
+                    grp = combined_chain.groupby('HASH', sort=False)['_ts'].min()
+                    creation_map = grp.to_dict()
+
+            for block_hash, block_df in blocks_dict.items():
+                if not isinstance(block_df, pd.DataFrame) or block_df.empty:
+                    continue
+
+                # observer id column
+                if 'observer_id' in block_df.columns:
+                    obs_col = 'observer_id'
+                elif 'observer' in block_df.columns:
+                    obs_col = 'observer'
+                else:
+                    continue
+
+                # find a timestamp column in observations
+                ts_candidates = ['received_at', 'received', 'timestamp', 'observed_at', 'observed', 'time']
+                ts_col = None
+                for c in ts_candidates:
+                    if c in block_df.columns:
+                        ts_col = c
+                        break
+                if ts_col is None:
+                    # fallback: try numeric index or skip
+                    continue
+
+                df = block_df.copy()
+                df[obs_col] = df[obs_col].astype(str)
+                df['_obs_ts'] = pd.to_numeric(df[ts_col], errors='coerce')
+                df = df.dropna(subset=['_obs_ts'])
+                if df.empty:
+                    continue
+
+                unique_observers = list(pd.unique(df[obs_col].astype(str)))
+                if not unique_observers:
+                    continue
+
+                required = int(math.ceil(threshold * num_agents))
+                if len(unique_observers) < required:
+                    # not enough observers reached threshold
+                    continue
+
+                # sort by observation time and find first time when >= required unique observers have seen it
+                df_sorted = df.sort_values('_obs_ts')
+                seen = set()
+                t80 = None
+                for _, row in df_sorted.iterrows():
+                    seen.add(str(row[obs_col]))
+                    if len(seen) >= required:
+                        t80 = float(row['_obs_ts'])
+                        break
+                if t80 is None:
+                    continue
+
+                # creation time
+                creation_ts = creation_map.get(str(block_hash))
+                if creation_ts is None or pd.isna(creation_ts):
+                    # try to infer from any TIMESTAMP in block_df
+                    if 'TIMESTAMP' in block_df.columns:
+                        creation_ts = pd.to_numeric(block_df['TIMESTAMP'].dropna().min(), errors='coerce')
+                if creation_ts is None or pd.isna(creation_ts):
+                    continue
+
+                delay = float(t80) - float(creation_ts)
+                if delay < 0:
+                    # skip negative delays
+                    continue
+
+                rows.append({
+                    'consensus': consensus,
+                    'num_agents': num_agents,
+                    'rep': rep_name,
+                    'block_propagation_delay_sec': delay,
+                    'block_hash': str(block_hash),
+                })
+
+    plot_df = pd.DataFrame(rows)
+
+    _create_consensus_boxplot_visualization(
+        plot_df=plot_df,
+        metric_column='block_propagation_delay_sec',
+        ylabel=ylabel,
+        plot_title=title if title is not None else 'Block Propagation Delay (80% Observers)',
+        comparison_title='Block Propagation Delay Comparison Across Consensus Algorithms',
+        ylim=None,
+        no_data_message='No block propagation delay data found. Ensure observations and timestamps are present.',
+        save_path=save_path,
+        dpi=dpi,
+        plot_name='block_propagation_delay_80pct',
+    )
+
+
 def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', title=None, save_path=None, dpi=None):
     """Show cumulative block production delay distribution with separated bins.
     
@@ -2092,6 +2220,9 @@ def _create_consensus_boxplot_visualization(
         'CPoA': 'red',
         'PoA': '#00008B',
         'R-PoA': '#4ebce0',
+        'R-PoA2': '#ff8c42',
+        'R_PoA2': '#ff8c42',
+        'RPoA2': '#ff8c42',
         'PoW': '#20e820',
     }
     for key, value in fixed_colors.items():
@@ -2327,11 +2458,11 @@ def show_total_produced_blocks_boxplot(save_path=None, dpi=None):
 
 
 def show_bpa_gini_main_chain_boxplot(save_path=None, dpi=None):
-    """BPE-style plot of Gini coefficient for main-chain block production by robot.
+    """BPE-style plot of degree of decentralization for main-chain block production by robot.
 
     For each run, counts how many blocks each robot contributed to the main chain,
-    computes a Gini coefficient over that per-robot distribution, and compares
-    across consensus algorithms and agent counts.
+    computes a Gini coefficient over that per-robot distribution, inverts it as
+    1 - gini, and compares across consensus algorithms and agent counts.
     """
 
     if 'loaded_data' not in globals() or not globals().get('loaded_data'):
@@ -2427,11 +2558,13 @@ def show_bpa_gini_main_chain_boxplot(save_path=None, dpi=None):
             if gini_val is None:
                 continue
 
+            decentralization_val = (1.0 - gini_val) * 100.0
+
             rows.append({
                 'consensus': consensus,
                 'num_agents': num_agents,
                 'rep': rep_name,
-                'gini_main_chain': gini_val,
+                'decentralization_main_chain': decentralization_val,
                 'main_chain_blocks': int(sum(counts.values())),
                 'n_robots': int(len(counts)),
             })
@@ -2440,19 +2573,19 @@ def show_bpa_gini_main_chain_boxplot(save_path=None, dpi=None):
 
     _create_consensus_boxplot_visualization(
         plot_df=plot_df,
-        metric_column='gini_main_chain',
-        ylabel='Gini Coefficient',
-        plot_title='Block Production Inequality (BPI)',
-        comparison_title='Gini Comparison Across Consensus Algorithms',
-        ylim=(0, 1),
+        metric_column='decentralization_main_chain',
+        ylabel='Degree of Decentralization [%]',
+        plot_title='Degree of Decentralization (DoD)',
+        comparison_title='Decentralization Comparison Across Consensus Algorithms',
+        ylim=(0, 100),
         no_data_message='No main-chain production data found. Ensure runs include MINER data.',
         save_path=save_path,
         dpi=dpi,
-        plot_name='bpi_gini_main_chain_boxplot',
+        plot_name='degree_of_decentralization_main_chain_boxplot',
     )
 
 
-def show_disagreement_boxplot(save_path=None, dpi=None):
+def show_agreement_boxplot(save_path=None, dpi=None):
     """Boxplot showing fraction of observations that refer to main-chain blocks.
 
     Metric per run (presented as percentage):
@@ -2597,13 +2730,13 @@ def show_disagreement_boxplot(save_path=None, dpi=None):
             _create_consensus_boxplot_visualization(
                 plot_df=plot_df,
                 metric_column='mainchain_obs_pct',
-                ylabel='Main-chain Observations (%)',
-                plot_title='Main-chain Observation Fraction (%)' + (' [trimmed]' if trim_enabled else ''),
-                comparison_title='Main-chain Observation Comparison Across Consensus Algorithms (%)' + (' [trimmed]' if trim_enabled else ''),
+                ylabel='Agreement (%)',
+                plot_title='Agreement Efficency (AE)' + (' [trimmed]' if trim_enabled else ''),
+                comparison_title='Agreement Comparison Across Consensus Algorithms' + (' [trimmed]' if trim_enabled else ''),
                 no_data_message='No main-chain observation data found. Ensure block observation JSON files and CSVs are loaded.',
                 save_path=save_path,
                 dpi=dpi,
-                plot_name='mainchain_obs_boxplot_trimmed' if trim_enabled else 'mainchain_obs_boxplot',
+                plot_name='agreement_boxplot_trimmed' if trim_enabled else 'agreement_boxplot',
             )
 
     def _on_trim_toggle(change):
