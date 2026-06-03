@@ -24,6 +24,8 @@ SAVED_DIR = Path("/home/dodo/experiment_picker_saves")
 PLOT_DIR = Path('plots')
 AUTO_SAVE_PLOTS = False
 DEFAULT_PLOT_DPI = 300
+# When True, boxplots will show outliers (fliers). Toggleable from the notebook.
+SHOW_OUTLIERS = True
 
 
 def configure_plot_saving(enabled=True, plot_dir='plots', dpi=300):
@@ -2264,8 +2266,31 @@ def _create_consensus_boxplot_visualization(
                 box_data.append(subset[metric_column].values)
         
         if box_data:
-            bp = ax.boxplot(box_data, positions=positions, widths=0.6, 
-                           patch_artist=True, showfliers=False)
+            # Respect global SHOW_OUTLIERS flag (can be toggled from the notebook)
+            show_outliers = bool(globals().get('SHOW_OUTLIERS', True))
+            if show_outliers:
+                bp = ax.boxplot(
+                    box_data,
+                    positions=positions,
+                    widths=0.6,
+                    patch_artist=True,
+                    showfliers=True,
+                    flierprops=dict(
+                        marker='*',
+                        markerfacecolor='black',
+                        markeredgecolor='black',
+                        markersize=8,
+                        linestyle='none',
+                    ),
+                )
+            else:
+                bp = ax.boxplot(
+                    box_data,
+                    positions=positions,
+                    widths=0.6,
+                    patch_artist=True,
+                    showfliers=False,
+                )
             
             # Color all boxes with consensus color
             for patch in bp['boxes']:
