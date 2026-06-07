@@ -2306,18 +2306,16 @@ def _create_consensus_boxplot_visualization(
                 for pos, values in zip(positions, box_data):
                     point_values = np.asarray(values, dtype=np.float64)
                     point_values = point_values[np.isfinite(point_values)]
-                    if point_values.size < 4:
+                    if point_values.size == 0:
                         continue
                     q1, q3 = np.percentile(point_values, [25, 75])
                     iqr = q3 - q1
-                    if iqr == 0:
-                        continue
                     lower_bound = q1 - 1.5 * iqr
                     upper_bound = q3 + 1.5 * iqr
                     outlier_mask = (point_values < lower_bound) | (point_values > upper_bound)
-                    if not np.any(outlier_mask):
-                        continue
                     outlier_values = point_values[outlier_mask]
+                    if outlier_values.size == 0:
+                        continue
                     if show_data_points:
                         outlier_x = np.full(outlier_values.size, pos + 0.44, dtype=np.float64)
                     else:
