@@ -26,6 +26,8 @@ AUTO_SAVE_PLOTS = False
 DEFAULT_PLOT_DPI = 300
 # When True, boxplots will show outliers (fliers). Toggleable from the notebook.
 SHOW_OUTLIERS = True
+# When True, boxplots will overlay jittered raw data points. Toggleable from the notebook.
+SHOW_DATA_POINTS = False
 
 
 def configure_plot_saving(enabled=True, plot_dir='plots', dpi=300):
@@ -2268,34 +2270,68 @@ def _create_consensus_boxplot_visualization(
         if box_data:
             # Respect global SHOW_OUTLIERS flag (can be toggled from the notebook)
             show_outliers = bool(globals().get('SHOW_OUTLIERS', True))
-            if show_outliers:
-                bp = ax.boxplot(
-                    box_data,
-                    positions=positions,
-                    widths=0.6,
-                    patch_artist=True,
-                    showfliers=True,
-                    flierprops=dict(
-                        marker='*',
-                        markerfacecolor='black',
-                        markeredgecolor='black',
-                        markersize=8,
-                        linestyle='none',
-                    ),
-                )
-            else:
-                bp = ax.boxplot(
-                    box_data,
-                    positions=positions,
-                    widths=0.6,
-                    patch_artist=True,
-                    showfliers=False,
-                )
+            show_data_points = bool(globals().get('SHOW_DATA_POINTS', False))
+            rng = np.random.default_rng(0)
+            bp = ax.boxplot(
+                box_data,
+                positions=positions,
+                widths=0.6,
+                patch_artist=True,
+                showfliers=False,
+            )
             
             # Color all boxes with consensus color
             for patch in bp['boxes']:
                 patch.set_facecolor(color_map[consensus])
                 patch.set_alpha(0.7)
+
+            if show_data_points:
+                for pos, values in zip(positions, box_data):
+                    point_values = np.asarray(values, dtype=np.float64)
+                    point_values = point_values[np.isfinite(point_values)]
+                    if point_values.size == 0:
+                        continue
+                    point_x = np.full(point_values.size, pos + 0.44, dtype=np.float64)
+                    ax.scatter(
+                        point_x,
+                        point_values,
+                        s=14,
+                        alpha=0.22,
+                        color=color_map[consensus],
+                        edgecolors='none',
+                        zorder=2,
+                    )
+
+            if show_outliers:
+                for pos, values in zip(positions, box_data):
+                    point_values = np.asarray(values, dtype=np.float64)
+                    point_values = point_values[np.isfinite(point_values)]
+                    if point_values.size < 4:
+                        continue
+                    q1, q3 = np.percentile(point_values, [25, 75])
+                    iqr = q3 - q1
+                    if iqr == 0:
+                        continue
+                    lower_bound = q1 - 1.5 * iqr
+                    upper_bound = q3 + 1.5 * iqr
+                    outlier_mask = (point_values < lower_bound) | (point_values > upper_bound)
+                    if not np.any(outlier_mask):
+                        continue
+                    outlier_values = point_values[outlier_mask]
+                    if show_data_points:
+                        outlier_x = np.full(outlier_values.size, pos + 0.44, dtype=np.float64)
+                    else:
+                        outlier_x = np.full(outlier_values.size, pos, dtype=np.float64)
+                    ax.scatter(
+                        outlier_x,
+                        outlier_values,
+                        marker='*',
+                        s=70,
+                        facecolors='black',
+                        edgecolors='black',
+                        linewidths=0.5,
+                        zorder=8,
+                    )
             
             ax.set_xticks(range(len(agent_counts)))
             ax.set_xticklabels(agent_counts)
