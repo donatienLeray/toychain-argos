@@ -2644,6 +2644,143 @@ def show_bpa_gini_main_chain_boxplot(save_path=None, dpi=None):
     )
 
 
+def show_vulnerability_boxplot(save_path=None, dpi=None):
+    """Boxplot of the Nakamoto coefficient per run.
+
+    For each run, sum main-chain difficulty per producer, sort producers by their
+    total main-chain difficulty contribution, and find the minimum number of
+    producers needed to reach at least 51% of the total main-chain difficulty.
+    """
+
+    if 'loaded_data' not in globals() or not globals().get('loaded_data'):
+        print("No `loaded_data` available. Use the picker and click Load data first.")
+        return
+
+    loaded_data = globals().get('loaded_data', {})
+    block_hashes = globals().get('block_produced_hash', {})
+    exp_choices = sorted(loaded_data.keys())
+
+    def _parse_producer_id(miner_val):
+        if pd.isna(miner_val):
+            return None
+        s = str(miner_val)
+        if s.isdigit():
+            return int(s)
+        if s.startswith('enode://') and '@' in s:
+            token = s.split('enode://', 1)[1].split('@', 1)[0]
+            if token.isdigit():
+                return int(token)
+            return token
+        return s
+
+    def _compute_main_chain_difficulty_by_producer_for_run(exp_key, rep_name, robots_dict):
+        producer_difficulty = {}
+
+        main_chain_df = get_main_chain(robots_dict)
+        if main_chain_df is None or 'TDIFF' not in main_chain_df.columns:
+            return producer_difficulty
+
+        if 'MINER' in main_chain_df.columns:
+            rows = main_chain_df.iloc[1:]
+            for _, row in rows.iterrows():
+                producer = _parse_producer_id(row.get('MINER'))
+                tdiff = pd.to_numeric(row.get('TDIFF'), errors='coerce')
+                if producer is None or pd.isna(tdiff):
+                    continue
+                producer_difficulty[producer] = producer_difficulty.get(producer, 0.0) + float(tdiff)
+            return producer_difficulty
+
+        if 'HASH' not in main_chain_df.columns:
+            return producer_difficulty
+
+        produced_by_robot = block_hashes.get(exp_key, {}).get(rep_name, {})
+        if not isinstance(produced_by_robot, dict) or not produced_by_robot:
+            return producer_difficulty
+
+        def _hash_matches(row_hash, produced_hashes):
+            row_prefix = str(row_hash).strip().lower()[:8]
+            if not row_prefix:
+                return False
+            for produced_hash in produced_hashes:
+                produced_prefix = str(produced_hash).strip().lower()[:8]
+                if produced_prefix and produced_prefix == row_prefix:
+                    return True
+            return False
+
+        rows = main_chain_df.iloc[1:]
+        for _, row in rows.iterrows():
+            tdiff = pd.to_numeric(row.get('TDIFF'), errors='coerce')
+            if pd.isna(tdiff):
+                continue
+
+            row_hash = row.get('HASH')
+            if pd.isna(row_hash):
+                continue
+
+            matched_producer = None
+            for producer_id, produced_hashes in produced_by_robot.items():
+                if _hash_matches(row_hash, produced_hashes):
+                    matched_producer = producer_id
+                    break
+
+            if matched_producer is None:
+                continue
+
+            producer_difficulty[matched_producer] = producer_difficulty.get(matched_producer, 0.0) + float(tdiff)
+
+        return producer_difficulty
+
+    rows = []
+    for exp_key in exp_choices:
+        consensus, num_agents = _extract_config_info(exp_key)
+        if consensus is None or num_agents is None:
+            print(f"Skipping {exp_key}: doesn't match consensus_number pattern")
+            continue
+
+        for rep_name, robots_dict in loaded_data.get(exp_key, {}).items():
+            producer_difficulty = _compute_main_chain_difficulty_by_producer_for_run(exp_key, rep_name, robots_dict)
+            if not producer_difficulty:
+                continue
+
+            difficulty_values = np.asarray(list(producer_difficulty.values()), dtype=np.float64)
+            difficulty_values = difficulty_values[np.isfinite(difficulty_values) & (difficulty_values > 0)]
+            if len(difficulty_values) == 0:
+                continue
+
+            sorted_difficulty = np.sort(difficulty_values)[::-1]
+            total_difficulty = float(sorted_difficulty.sum())
+            if total_difficulty <= 0:
+                continue
+
+            cumulative = np.cumsum(sorted_difficulty)
+            threshold = 0.51 * total_difficulty
+            nakamoto_coefficient = int(np.searchsorted(cumulative, threshold, side='left') + 1)
+
+            rows.append({
+                'consensus': consensus,
+                'num_agents': num_agents,
+                'rep': rep_name,
+                'nakamoto_coefficient': nakamoto_coefficient,
+                'main_chain_difficulty': total_difficulty,
+                'n_robots': int(len(difficulty_values)),
+            })
+
+    plot_df = pd.DataFrame(rows)
+
+    _create_consensus_boxplot_visualization(
+        plot_df=plot_df,
+        metric_column='nakamoto_coefficient',
+        ylabel='Nodes required for 51% of main-chain difficulty',
+        plot_title='Vulnerability (Nakamoto Coefficient)',
+        comparison_title='Vulnerability Comparison Across Consensus Algorithms',
+        ylim=None,
+        no_data_message='No vulnerability data found. Ensure runs include main-chain TDIFF and MINER data.',
+        save_path=save_path,
+        dpi=dpi,
+        plot_name='vulnerability_nakamoto_coefficient',
+    )
+
+
 def show_agreement_boxplot(save_path=None, dpi=None):
     """Boxplot showing fraction of observations that refer to main-chain blocks.
 
