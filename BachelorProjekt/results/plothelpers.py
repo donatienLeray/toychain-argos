@@ -6,6 +6,7 @@ import math
 import json
 import pickle
 import re
+import warnings
 
 try:
     import ipywidgets as widgets
@@ -498,6 +499,7 @@ class ExperimentPicker:
         globals()['block_production_counts'] = bundle.get('block_production_counts', {})
         globals()['block_produced_hash'] = bundle.get('block_produced_hash', {})
         globals()['loaded_blocks'] = bundle.get('loaded_blocks', {})
+        globals()['robot_speeds'] = bundle.get('robot_speeds', {})
         globals()['selected_csv_map'] = bundle.get('selected_csv_map', {})
 
         with self.output:
@@ -913,13 +915,14 @@ def _get_experiment_subset(data: Dict, exp_key: str) -> Dict:
     return {k: v for k, v in data.items() if k == exp_key or k.startswith(f"{exp_key}/")}
 
 
-def _save_experiment_bundle(exp_key: str, loaded: Dict, block_counts: Dict, block_hashes: Dict, loaded_blocks: Dict, selected_csv_map: Dict):
+def _save_experiment_bundle(exp_key: str, loaded: Dict, block_counts: Dict, block_hashes: Dict, loaded_blocks: Dict, robot_speeds: Dict, selected_csv_map: Dict):
     SAVED_DIR.mkdir(parents=True, exist_ok=True)
     bundle = {
         'loaded_data': _get_experiment_subset(loaded, exp_key),
         'block_production_counts': _get_experiment_subset(block_counts, exp_key),
         'block_produced_hash': _get_experiment_subset(block_hashes, exp_key),
         'loaded_blocks': _get_experiment_subset(loaded_blocks, exp_key),
+        'robot_speeds': _get_experiment_subset(robot_speeds, exp_key),
         'selected_csv_map': {exp_key: selected_csv_map.get(exp_key)} if selected_csv_map else {},
     }
     with open(SAVED_DIR / f"{exp_key}.pkl", 'wb') as f:
@@ -964,6 +967,27 @@ def _load_block_observations(block_observations_path: Path) -> Dict[str, pd.Data
     for block_hash, block_df in df.groupby('block_hash', sort=False):
         block_frames[str(block_hash)] = block_df.reset_index(drop=True).copy()
     return block_frames
+
+
+def _load_robot_speed_from_monitor_log(log_path: Path, robot_key: int) -> Optional[float]:
+    """Extract the first `speed: <number>` value from a robot monitor.log file."""
+    if not log_path.exists():
+        warnings.warn(f"No monitor.log found for robot {robot_key}: {log_path}", UserWarning)
+        return None
+
+    speed_re = re.compile(r'speed:\s*([0-9]+(?:\.[0-9]+)?)')
+    try:
+        with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+            for line in f:
+                match = speed_re.search(line)
+                if match:
+                    return float(match.group(1))
+    except Exception as exc:
+        warnings.warn(f"Failed to read speed from {log_path}: {exc}", UserWarning)
+        return None
+
+    warnings.warn(f"No speed line found in {log_path} for robot {robot_key}", UserWarning)
+    return None
 
 def create_csv_picker_for_loaded_paths(picker, data_dir=None):
     """For each path in `picker.last_loaded` (each either `data/exp` or `data/exp/cfg`),
@@ -1072,12 +1096,13 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
         block_counts = globals().get('block_production_counts', {})
         block_hashes = globals().get('block_produced_hash', {})
         loaded_blocks = globals().get('loaded_blocks', {})
+        robot_speeds = globals().get('robot_speeds', {})
         selected_csv_map = globals().get('selected_csv_map', {})
         saved_any = False
         saved_paths = []
         for exp_key in radio_map.keys():
             if _get_experiment_subset(loaded, exp_key):
-                _save_experiment_bundle(exp_key, loaded, block_counts, block_hashes, loaded_blocks, selected_csv_map)
+                _save_experiment_bundle(exp_key, loaded, block_counts, block_hashes, loaded_blocks, robot_speeds, selected_csv_map)
                 saved_paths.append(SAVED_DIR / f"{exp_key}.pkl")
                 saved_any = True
         with out:
@@ -1099,6 +1124,7 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
             block_production_counts = {}
             block_produced_hash = {}
             loaded_blocks = {}
+            robot_speeds = {}
             # Record the chosen csv basename per experiment so other helpers can know which was chosen
             selected_csv_map = {}
 
@@ -1134,6 +1160,7 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
                         count_dict = block_production_counts.setdefault(base_key, {}).setdefault(run.name, {})
                         hash_dict = block_produced_hash.setdefault(base_key, {}).setdefault(run.name, {})
                         blocks_dict = loaded_blocks.setdefault(base_key, {}).setdefault(run.name, {})
+                        speed_dict = robot_speeds.setdefault(base_key, {}).setdefault(run.name, {})
                         # robot dirs inside run — numeric names starting at 1; exclude '0'
                         robots = sorted([d for d in run.iterdir() if d.is_dir() and d.name.isdigit() and int(d.name) != 0], key=lambda p: int(p.name))
                         if not robots:
@@ -1182,11 +1209,14 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
                                 count_dict[robot_key] = 0
                                 hash_dict[robot_key] = []
 
+                            speed_dict[robot_key] = _load_robot_speed_from_monitor_log(log_path, robot_key)
+
             # Save global variables
             globals()['loaded_data'] = loaded
             globals()['block_production_counts'] = block_production_counts
             globals()['block_produced_hash'] = block_produced_hash
             globals()['loaded_blocks'] = loaded_blocks
+            globals()['robot_speeds'] = robot_speeds
             globals()['selected_csv_map'] = selected_csv_map
             
             out.clear_output()
@@ -1195,10 +1225,12 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
                     total_robots = sum(len(robots) for exp_data in loaded.values() for robots in exp_data.values())
                     total_blocks = sum(count for exp_data in block_production_counts.values() for robots in exp_data.values() for count in robots.values())
                     total_observed_blocks = sum(len(blocks) for exp_data in loaded_blocks.values() for blocks in exp_data.values())
+                    total_speeds = sum(1 for exp_data in robot_speeds.values() for robots in exp_data.values() for speed in robots.values() if speed is not None)
                     print(f"✓ Data loaded successfully!")
                     print(f"  - {total_robots} robot datasets")
                     print(f"  - {total_blocks:,} total blocks produced")
                     print(f"  - {total_observed_blocks:,} observed block hashes")
+                    print(f"  - {total_speeds:,} robot speeds")
                     save_btn.layout.display = 'block'
                 else:
                     print("❌ Error: No data was loaded. Please check your experiment selection and try again.")
@@ -2513,6 +2545,58 @@ def show_total_produced_blocks_boxplot(save_path=None, dpi=None):
         save_path=save_path,
         dpi=dpi,
         plot_name='total_produced_blocks_boxplot',
+    )
+
+
+def show_agent_speed_boxplot(save_path=None, dpi=None):
+    """Boxplot of robot speeds read from monitor.log files.
+
+    Each robot contributes one speed sample, so the plot shows the distribution of
+    assigned agent speeds across repetitions for every consensus / agent-count pair.
+    """
+
+    if 'robot_speeds' not in globals() or not globals().get('robot_speeds'):
+        print("No robot speed data available. Load data first using the CSV picker.")
+        return
+
+    robot_speeds = globals().get('robot_speeds', {})
+    exp_choices = sorted(robot_speeds.keys())
+
+    rows = []
+    for exp_key in exp_choices:
+        consensus, num_agents = _extract_config_info(exp_key)
+        if consensus is None or num_agents is None:
+            print(f"Skipping {exp_key}: doesn't match consensus_number pattern")
+            continue
+
+        for rep_name, robots_dict in robot_speeds.get(exp_key, {}).items():
+            if not isinstance(robots_dict, dict):
+                continue
+
+            for robot_id, speed in robots_dict.items():
+                if speed is None:
+                    continue
+                rows.append({
+                    'consensus': consensus,
+                    'num_agents': num_agents,
+                    'rep': rep_name,
+                    'robot': robot_id,
+                    'agent_speed': float(speed),
+                })
+
+    plot_df = pd.DataFrame(rows)
+
+    _create_consensus_boxplot_visualization(
+        plot_df=plot_df,
+        metric_column='agent_speed',
+        ylabel='Agent speed',
+        plot_title='Agent Speeds',
+        comparison_title='Agent Speed Comparison Across Consensus Algorithms',
+        ylim=None,
+        no_data_message='No agent speed data found. Ensure monitor.log contains lines like "speed: 17.0".',
+        save_path=save_path,
+        dpi=dpi,
+        plot_name='agent_speeds_boxplot',
     )
 
 

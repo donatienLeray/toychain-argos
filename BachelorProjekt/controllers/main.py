@@ -75,6 +75,7 @@ global clocks, counters, logs, txs
 clocks, counters, logs, txs = dict(), dict(), dict(), dict()
 
 # intalise Genesis Block
+#######################################################################
 if ConsensusClass.__name__ == 'ProofOfAuthority' or ConsensusClass.__name__ == 'ProofOfWork':
     GENESIS = Block(0, 0000, [], [gen_enode(i+1) for i in range(int(lp['generic']['num_robots']))], 0, 0, 0, nonce = 1, state = State())
 else:
@@ -105,7 +106,7 @@ class States(Enum):
 ####################################################################################################################################################################################
 
 def init():
-    global clocks,counters, logs, submodules, me, rw, nav, odo, gps, rb, w3, fsm, rs, erb, rgb, robotID
+    global clocks,counters, logs, submodules, me, rw, nav, odo, gps, rb, w3, fsm, rs, erb, rgb, robotID, robotSPEED
     robotID = str(int(robot.variables.get_id()[2:])+1)
     robotIP = '127.0.0.1'
     robot.variables.set_attribute("id", str(robotID))
@@ -158,7 +159,20 @@ def init():
     
     # /* Init Random-Walk, __walking process */
     robot.log.info('Initialising random-walk...')
-    rw = RandomWalk(robot, cp['scout_speed'])
+    agent_speeds = lp['generic'].get('agent_speeds', [])
+    try:
+        robot_idx = max(0, int(robotID) - 1)
+    except Exception:
+        robot_idx = 0
+
+    if robot_idx < len(agent_speeds):
+        robotSPEED = agent_speeds[robot_idx]
+    else:
+        robotSPEED = lp['generic']['agent_speed']
+
+    robot.log.info(f'Random-walk speed: {robotSPEED}')
+    rw = RandomWalk(robot, robotSPEED)
+   
 
     # # /* Init Navigation, __navigate process */
     # robot.log.info('Initialising navigation...')

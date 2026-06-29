@@ -37,9 +37,12 @@ export RABRANGE="0.5"
 export WHEELNOISE="0"
 export TPS=10
 export DENSITY="2"
+export AGENTSPEED=18
+# True = all robots use the same speed, False = seeded symmetric pairs around AGENTSPEED
+export SPEEDUNIFORM=False
 
 #export NUMROBOTS=$(echo $NUM1+$NUM2 | bc)
-export NUMROBOTS=15
+export NUMROBOTS=5
 export ARENADIM=$(echo "scale=3 ; sqrt($NUMROBOTS/$DENSITY)" | bc)
 export ARENADIMH=$(echo "scale=3 ; $ARENADIM/2" | bc)
 export STARTDIM=$(echo "scale=3 ; $ARENADIM/5" | bc)
@@ -52,7 +55,7 @@ export EXPLORER_HOST="localhost"
 export EXPLORER_PORT="8765"
 
 # [OTHER]
-export SEED=420
+export SEED=126
 # When True, set SEED to the repetition number for each repetition
 export REP_SEED=True
 export TIMELIMIT=100
