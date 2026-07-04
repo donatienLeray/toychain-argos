@@ -23,7 +23,7 @@ export GENESISFILE="${DOCKERFOLDER}/geth/files/$GENESISNAME.json"
 
 
 # [ARGOS]
-export ARGOSNAME="greeter"
+export ARGOSNAME=obstacle
 export ARGOSFILE="${EXPERIMENTFOLDER}/experiments/${ARGOSNAME}.argos"
 export ARGOSTEMPLATE="${EXPERIMENTFOLDER}/experiments/${ARGOSNAME}.x.argos"
 
@@ -39,13 +39,43 @@ export TPS=10
 export DENSITY="2"
 export AGENTSPEED=18
 # True = all robots use the same speed, False = seeded symmetric pairs around AGENTSPEED
-export SPEEDUNIFORM=False
+export SPEEDUNIFORM=True
+
 
 #export NUMROBOTS=$(echo $NUM1+$NUM2 | bc)
 export NUMROBOTS=5
-export ARENADIM=$(echo "scale=3 ; sqrt($NUMROBOTS/$DENSITY)" | bc)
+#export ARENADIM=$(echo "scale=3 ; sqrt($NUMROBOTS/$DENSITY)" | bc)
+#export ARENADIMH=$(echo "scale=3 ; $ARENADIM/2" | bc)
+# experiment 3 obstacle
+#export OBSTACLEB=$(echo "scale=3 ; $RABRANGE" | bc)
+#export ARENADIM=$(echo "scale=3 ; sqrt($NUMROBOTS/$DENSITY)+sqrt($OBSTACLEB*sqrt($NUMROBOTS/$DENSITY))" | bc)
+#export ARENADIMH=$(echo "scale=3 ; $ARENADIM/2" | bc)
+#export OBSTACLEL=$(echo "scale=3 ; (($ARENADIM*$ARENADIM)-($NUMROBOTS/$DENSITY)-($OBSTACLEB*$OBSTACLEB))/2*$OBSTACLEB" | bc)
+#export OBSTACLEOFFSET=$(echo "scale=3 ; $ARENADIMH-$OBSTACLEL/2" | bc)
+#export POINTDIM=$(echo "scale=3 ; $RABRANGE/sqrt(2)" | bc)
+#export POINTOFFSET=$(echo "scale=3 ; $ARENADIMH-$OBSTACLEL" | bc)
+#export STARTDIM=$(echo "scale=3 ; $ARENADIM/5" | bc)
+
+export SCALINGF=$(echo "scale=3 ; sqrt($NUMROBOTS/5)" | bc)
+export OBSTACLEB=$(echo "scale=3 ; 0.5*$SCALINGF" | bc)
+export ARENADIM=$(echo "scale=3 ; 2.469*$SCALINGF" | bc)
 export ARENADIMH=$(echo "scale=3 ; $ARENADIM/2" | bc)
+export OBSTACLEL=$(echo "scale=3 ; 0.836*$SCALINGF" | bc)
+export OBSTACLEOFFSET=$(echo "scale=3 ; $ARENADIMH-$OBSTACLEL/2" | bc)
+export POINTDIM=$(echo "scale=3 ; $OBSTACLEB/sqrt(2)" | bc)
+export POINTOFFSET=$(echo "scale=3 ; $ARENADIMH-$OBSTACLEL+$OBSTACLEB/2" | bc)
 export STARTDIM=$(echo "scale=3 ; $ARENADIM/5" | bc)
+export POINTH=$(echo "scale=3 ; $OBSTACLEB/2" | bc)
+
+# Top-right square side length in meters for entry/exit logging.
+export ZONE_SIZE=$(echo "scale=3 ; $OBSTACLEL+$OBSTACLEB" | bc)
+
+# Start 1/5 of the robots inside the triangle in a smaller square fully contained in it.
+export TRIANGLE_ROBOTS=$(echo "scale=0 ; $NUMROBOTS/5" | bc)
+export OUTSIDE_TRIANGLE_ROBOTS=$(echo "$NUMROBOTS-$TRIANGLE_ROBOTS" | bc)
+export TRIANGLE_START_SIZE=$(echo "scale=3 ; $ZONE_SIZE/2" | bc)
+export TRIANGLE_START_MIN=$(echo "scale=3 ; $ARENADIMH-$TRIANGLE_START_SIZE" | bc)
+
 
 # [TOYCHAIN]
 export BLOCKPERIOD=2

@@ -134,40 +134,11 @@ run() {
 }
 
 
-######################################################################
-### run experiment on updated POC
-#EXP=POC_test1
-#
-## standard values
-#config "TPS" 10
-#config "REPS" 10
-#config "LENGTH" 100
-#config "REP_SEED" "True"
-#loopconfig "debug" "main" "False"
-#loopconfig "debug" "loop" "True"
-#loopconfig "debug" "scs" "True"
-#
-## POC #
-#config "CONSENSUS" "ProofOfConnection"
-#loopconfig "scs" "update" "\"peer_index\""
-#loopconfig "scs" "decay" 50
-#
-## run experiment with increasing range of robots
-#for UTIL in $(seq 5 5 25); do 
-#	#name of the configuration
-#	CFG="ProofOfConnection2_${UTIL}"
-#	# set number of robots
-#	config "NUMROBOTS" "${UTIL}"
-#	# run experiment
-#	wait
-#	run "${EXP}/${CFG}" $@
-#done
-
-
-
 ####################################################################
 # run experiment with different consensus mechanisms
-EXP=2_random_walk_different_speed
+#EXP=1_random_walk
+#EXP=2_random_walk_different_speed
+EXP=3_random_walk_obstacle_trap
 
 # Explorer
 config "EXPLORER" "False"
@@ -180,10 +151,12 @@ config "REP_SEED" "True"
 loopconfig "debug" "main" "False"
 loopconfig "debug" "loop" "True"
 loopconfig "debug" "scs" "True"
-
-# make spped randomized
 config "AGENTSPEED" 18
-config "SPEEDUNIFORM" "False"
+# set to to false for experiment 2_random_walk_different_speed
+config "SPEEDUNIFORM" "True"
+# option for experiment 3_random_walk_obstacle_trap
+config ARGOSNAME "obstacle"
+
 
 
 ##########

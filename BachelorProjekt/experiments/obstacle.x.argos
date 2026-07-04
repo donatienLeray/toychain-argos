@@ -6,8 +6,8 @@
   <!-- ************************* -->
   <framework>
     <system threads="1" method="balance_quantity" />
-    <experiment length="400"
-      ticks_per_second="10"/>
+    <experiment length="${LENGTH}"
+      ticks_per_second="${TPS}"/>
   </framework>
 
   <!-- *************** -->
@@ -16,12 +16,12 @@
   <controllers>
 
    
-    <python_controller id="main" library="/home/dodo/toychain-argos/argos-python/build/libpy_controller_interface.so">
+    <python_controller id="main" library="${ARGOSFOLDER}/build/libpy_controller_interface.so">
       <!-- Normal actuator/sensor configuration follows -->
       <actuators>
         <epuck_rgb_leds implementation="default" medium="leds" />
         <epuck_wheels implementation="default" noise_std_dev="0"/>
-        <epuck_range_and_bearing implementation="medium" range="0.5"/>
+        <epuck_range_and_bearing implementation="medium" range="${RABRANGE}"/>
       </actuators>
       <sensors>
         <positioning implementation="default" />
@@ -33,44 +33,68 @@
       <!-- No required configuration -->
       
       <!-- Optionally, you can pass a script as a controller parameter: -->
-      <params script="/home/dodo/toychain-argos/BachelorProjekt/controllers/main.py"
+      <params script="${CON1}"
       timeRate="1" />
     </python_controller>
     <!--- copy paste here for second controller -->
   </controllers>
 
 
-  <loop_functions library="/home/dodo/toychain-argos/argos-python/build/libpy_loop_function_interface.so"
+  <loop_functions library="${ARGOSFOLDER}/build/libpy_loop_function_interface.so"
                   label="py_loop_function">
-    <params script="/home/dodo/toychain-argos/BachelorProjekt/loop_functions/loop_function.py"/>
+    <params script="${EXPERIMENTFOLDER}/loop_functions/loop_function.py"/>
   </loop_functions>
 
 
   <!-- *********************** -->
   <!-- * Arena configuration * -->
   <!-- *********************** -->
-  <arena size="1.581, 1.581, 9" center="0,0,0">
+  <arena size="${ARENADIM}, ${ARENADIM}, 9" center="0,0,0">
 
- <floor id="f" source="image" path="/home/dodo/toychain-argos/BachelorProjekt/experiments/floors/market.png" />
+ <floor id="f" source="image" path="${EXPERIMENTFOLDER}/experiments/floors/market.png" />
 
-    <box id="wall_north" size="1.581,0.06,0.1" movable="false">
-      <body position="0,.790,0" orientation="0,0,0" />
+    <box id="wall_north" size="${ARENADIM},0.06,0.1" movable="false">
+      <body position="0,${ARENADIMH},0" orientation="0,0,0" />
     </box>
-    <box id="wall_south" size="1.581,0.06,0.1" movable="false">
-      <body position="0,-.790,0" orientation="0,0,0" />
+    <box id="wall_south" size="${ARENADIM},0.06,0.1" movable="false">
+      <body position="0,-${ARENADIMH},0" orientation="0,0,0" />
     </box>
-    <box id="wall_east" size="0.06,1.581,0.1" movable="false">
-      <body position=".790,0,0" orientation="0,0,0" />
+    <box id="wall_east" size="0.06,${ARENADIM},0.1" movable="false">
+      <body position="${ARENADIMH},0,0" orientation="0,0,0" />
     </box>
-    <box id="wall_west" size="0.06,1.581,0.1" movable="false">
-      <body position="-.790,0,0" orientation="0,0,0" />
+    <box id="wall_west" size="0.06,${ARENADIM},0.1" movable="false">
+      <body position="-${ARENADIMH},0,0" orientation="0,0,0" />
     </box>
+    <box id="obstacle_west" size="${OBSTACLEL},${OBSTACLEB},0.1" movable="false">
+      <body position="${OBSTACLEOFFSET},0,0" orientation="0,0,0" />
+    </box>
+    <box id="obstacle_west_point" size="${POINTDIM},${POINTDIM},0.1" movable="false">
+      <body position="${POINTOFFSET},${POINTH},0" orientation="45,0,0" />
+    </box>
+
+    <box id="obstacle_north" size="${OBSTACLEB},${OBSTACLEL},0.1" movable="false">
+      <body position="0,${OBSTACLEOFFSET},0" orientation="0,0,0" />
+    </box>
+    <box id="obstacle_north_point" size="${POINTDIM},${POINTDIM},0.1" movable="false">
+      <body position="${POINTH},${POINTOFFSET},0" orientation="45,0,0" />
+    </box>
+
 
     <distribute>
-      <position method="uniform" min="-,-,0" max=",,0" /> 
+      <position method="uniform" min="${TRIANGLE_START_MIN},${TRIANGLE_START_MIN},0" max="${ARENADIMH},${ARENADIMH},0" /> 
       <orientation method="gaussian" mean="0,0,0" std_dev="360,0,0" /> 
-      <entity quantity="5" max_trials="15"> 
+      <entity quantity="${TRIANGLE_ROBOTS}" max_trials="15"> 
         <e-puck id="bc" >
+          <controller config="main" />
+        </e-puck>
+      </entity> 
+    </distribute>
+
+    <distribute>
+      <position method="uniform" min="-${STARTDIM},-${STARTDIM},0" max="${STARTDIM},${STARTDIM},0" /> 
+      <orientation method="gaussian" mean="0,0,0" std_dev="360,0,0" /> 
+      <entity quantity="${OUTSIDE_TRIANGLE_ROBOTS}" max_trials="15"> 
+        <e-puck id="bd" >
           <controller config="main" />
         </e-puck>
       </entity> 
@@ -106,9 +130,9 @@
     <!-- ************************************************************************ -->
   <!-- <qt-opengl autoplay="true"> -->
     <qt-opengl autoplay="true">
-      <user_functions library="/home/dodo/toychain-argos/argos-python/build/libpy_qtuser_function_interface.so"
+      <user_functions library="${ARGOSFOLDER}/build/libpy_qtuser_function_interface.so"
                       label="py_qtuser_function" >
-      <params script="/home/dodo/toychain-argos/BachelorProjekt/loop_functions/qtuser_function.py"/>
+      <params script="${EXPERIMENTFOLDER}/loop_functions/qtuser_function.py"/>
       </user_functions>
       
     <camera>

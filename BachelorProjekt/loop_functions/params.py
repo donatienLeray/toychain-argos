@@ -6,6 +6,23 @@ import math
 import os
 import random
 
+
+def _env_float(name, default=None):
+	value = os.environ.get(name, "")
+	if value == "":
+		return default
+	return float(value)
+
+
+def _computed_arena_dim():
+	num_robots = _env_float("NUMROBOTS")
+	density = _env_float("DENSITY")
+	rab_range = _env_float("RABRANGE")
+	if num_robots is None or density is None or rab_range is None:
+		raise RuntimeError("ARENADIM is not set and NUMROBOTS/DENSITY/RABRANGE are incomplete")
+	base = math.sqrt(num_robots / density)
+	return base + math.sqrt(rab_range * base)
+
 # All environment variables
 params = dict()
 params['environ'] = os.environ
@@ -13,7 +30,7 @@ params['environ'] = os.environ
 # Generic parameters; include adaptations of environment variables
 params['generic'] = dict()
 params['generic']['time_limit'] = float(os.environ["TIMELIMIT"]) * 60
-params['generic']['arena_size'] = float(os.environ["ARENADIM"])
+params['generic']['arena_size'] = _env_float("ARENADIM", _computed_arena_dim())
 params['generic']['num_robots'] = int(os.environ["NUMROBOTS"])
 # Seed for deterministic randomness: read from environment variable `SEED` set by the experiment runner.
 # If SEED is empty or invalid, fall back to None (random behavior).
@@ -25,7 +42,7 @@ params['generic']['tps'] = eval(os.environ["TPS"])
 #params['generic']['num_1'] = eval(os.environ["NUM1"])
 #params['generic']['num_2'] = eval(os.environ["NUM2"])
 params['generic']['density'] = eval(os.environ["DENSITY"])
-params['generic']['arena_dim'] = eval(os.environ["ARENADIM"])
+params['generic']['arena_dim'] = _env_float("ARENADIM", _computed_arena_dim())
 params['generic']['rab_range'] = eval(os.environ["RABRANGE"])
 params['generic']['block_period'] = eval(os.environ["BLOCKPERIOD"])
 #params['generic']['max_workers'] = eval(os.environ["MAXWORKERS"])
@@ -33,6 +50,7 @@ params['generic']['block_period'] = eval(os.environ["BLOCKPERIOD"])
 params['generic']['consensus'] = str(os.environ["CONSENSUS"])
 params['generic']['agent_speed'] = eval(os.environ["AGENTSPEED"])
 params['generic']['speed_uniform'] = str(os.environ["SPEEDUNIFORM"])
+params['generic']['zone_size'] = _env_float("ZONE_SIZE", 0.5)
 
 
 def _build_agent_speeds(mean_speed, num_robots, speed_uniform=True, seed=None):

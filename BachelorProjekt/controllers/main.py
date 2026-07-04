@@ -12,7 +12,7 @@ experimentFolder = os.environ['EXPERIMENTFOLDER']
 sys.path += [mainFolder, experimentFolder]
 #-----------------------------
 # controllers
-from controllers.actusensors.movement     import RandomWalk
+from controllers.actusensors.movement     import RandomWalk, GPS
 from controllers.actusensors.erandb       import ERANDB
 from controllers.actusensors.rgbleds      import RGBLEDs
 from controllers.utils import *
@@ -74,6 +74,10 @@ txList, tripList, submodules = [], [], []
 global clocks, counters, logs, txs
 clocks, counters, logs, txs = dict(), dict(), dict(), dict()
 
+global zoneInside, zoneBounds
+zoneInside = None
+zoneBounds = dict()
+
 # intalise Genesis Block
 #######################################################################
 if ConsensusClass.__name__ == 'ProofOfAuthority' or ConsensusClass.__name__ == 'ProofOfWork':
@@ -106,7 +110,7 @@ class States(Enum):
 ####################################################################################################################################################################################
 
 def init():
-    global clocks,counters, logs, submodules, me, rw, nav, odo, gps, rb, w3, fsm, rs, erb, rgb, robotID, robotSPEED
+    global clocks,counters, logs, submodules, me, rw, nav, odo, gps, rb, w3, fsm, rs, erb, rgb, robotID, robotSPEED, zoneInside, zoneBounds
     robotID = str(int(robot.variables.get_id()[2:])+1)
     robotIP = '127.0.0.1'
     robot.variables.set_attribute("id", str(robotID))
@@ -182,9 +186,36 @@ def init():
     # robot.log.info('Initialising odometry...')
     # odo = OdoCompass(robot)
 
-    # # /* Init GPS sensor */
-    # robot.log.info('Initialising gps...')
-    # gps = GPS(robot)
+    # /* Init GPS sensor */
+    robot.log.info('Initialising gps...')
+    gps = GPS(robot)
+
+    arena_dim = lp['generic'].get('arena_dim', lp['generic'].get('arena_size'))
+    zone_size = float(lp['generic'].get('zone_size', 0.5))
+    arena_half = float(arena_dim) / 2.0
+    zoneBounds = {
+        'size': zone_size,
+        'ax': arena_half,
+        'ay': arena_half,
+        'bx': max(-arena_half, arena_half - zone_size),
+        'by': arena_half,
+        'cx': arena_half,
+        'cy': max(-arena_half, arena_half - zone_size),
+        'xmin': max(-arena_half, arena_half - zone_size),
+        'xmax': arena_half,
+        'ymin': max(-arena_half, arena_half - zone_size),
+        'ymax': arena_half,
+    }
+
+    robot.variables.set_attribute("in_zone", "0")
+    robot.variables.set_attribute("zone_event", "NONE")
+
+    logs['zone'] = Logger(
+        f"{log_folder}zone.csv",
+        ['EVENT', 'X', 'Y', 'XMIN', 'XMAX', 'YMIN', 'YMAX'],
+        ID=robotID,
+    )
+    zoneInside = None
 
     # /* Init LEDs */
     rgb = RGBLEDs(robot)
@@ -211,6 +242,7 @@ def init():
 
 def controlstep():
     global clocks, counters, startFlag, startTime
+    global zoneInside, zoneBounds
 
     ###########################
     ######## ROUTINES #########
@@ -293,6 +325,47 @@ def controlstep():
 
         if clocks['peering'].query():
             peering()
+
+        # Log when the robot enters or exits the configured top-right square.
+        try:
+            position = gps.getPosition()
+            current_inside = (
+                zoneBounds['xmin'] <= position.x <= zoneBounds['xmax'] and
+                zoneBounds['ymin'] <= position.y <= zoneBounds['ymax'] and
+                position.x + position.y >= (zoneBounds['ax'] + zoneBounds['ay']) - zoneBounds['size']
+            )
+
+            if zoneInside is None:
+                zoneInside = current_inside
+                if current_inside:
+                    robot.variables.set_attribute("zone_event", "ENTER")
+                    if logs.get('zone'):
+                        logs['zone'].log([
+                            'ENTER',
+                            round(position.x, 3),
+                            round(position.y, 3),
+                            round(zoneBounds['xmin'], 3),
+                            round(zoneBounds['xmax'], 3),
+                            round(zoneBounds['ymin'], 3),
+                            round(zoneBounds['ymax'], 3),
+                        ])
+            elif current_inside != zoneInside:
+                event = 'ENTER' if current_inside else 'EXIT'
+                robot.variables.set_attribute("zone_event", event)
+                if logs.get('zone'):
+                    logs['zone'].log([
+                        event,
+                        round(position.x, 3),
+                        round(position.y, 3),
+                        round(zoneBounds['xmin'], 3),
+                        round(zoneBounds['xmax'], 3),
+                        round(zoneBounds['ymin'], 3),
+                        round(zoneBounds['ymax'], 3),
+                    ])
+                zoneInside = current_inside
+            robot.variables.set_attribute("in_zone", "1" if current_inside else "0")
+        except Exception as e:
+            robot.log.exception(f"Failed to log zone transition for robot {robotID}: {e}")
 
         # Update blockchain state on the robot C++ object
         last_block = w3.get_block('last')
@@ -452,6 +525,16 @@ def destroy():
         robot.log.exception(f"Failed while iterating chain for robot {robotID}: {e}")
     finally:
         # Ensure logs are flushed and closed
+        try:
+            if logs.get('zone'):
+                logs['zone'].file.flush()
+                try:
+                    os.fsync(logs['zone'].file.fileno())
+                except Exception:
+                    pass
+                logs['zone'].close()
+        except Exception as e:
+            robot.log.exception(f"Failed to close zone log for robot {robotID}: {e}")
         try:
             if logs.get('block'):
                 logs['block'].file.flush()

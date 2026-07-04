@@ -26,7 +26,7 @@ PLOT_DIR = Path('plots')
 AUTO_SAVE_PLOTS = False
 DEFAULT_PLOT_DPI = 300
 # When True, boxplots will show outliers (fliers). Toggleable from the notebook.
-SHOW_OUTLIERS = True
+SHOW_OUTLIERS = False
 # When True, boxplots will overlay jittered raw data points. Toggleable from the notebook.
 SHOW_DATA_POINTS = False
 
