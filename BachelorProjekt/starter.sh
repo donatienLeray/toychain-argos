@@ -17,6 +17,40 @@ if [[ $1 == "--help" || $1 == "-h" ]]; then
 fi
 source experimentconfig.sh
 
+cleanup_stale_argos_ports() {
+    local base_port=1234
+    local robot_count="${NUMROBOTS:-0}"
+
+    if ! [[ "$robot_count" =~ ^[0-9]+$ ]] || [ "$robot_count" -le 0 ]; then
+        return 0
+    fi
+
+    local end_port=$((base_port + robot_count - 1))
+    local stale_pids
+
+    if ! command -v ss >/dev/null 2>&1; then
+        return 0
+    fi
+
+    stale_pids=$(ss -ltnp 2>/dev/null | awk -v b="$base_port" -v e="$end_port" '
+        $1 == "LISTEN" && index($0, "\"argos3\"") > 0 {
+            split($4, a, ":")
+            p = a[length(a)] + 0
+            if (p >= b && p <= e && match($0, /pid=[0-9]+/)) {
+                pid = substr($0, RSTART + 4, RLENGTH - 4)
+                print pid
+            }
+        }
+    ' | sort -u)
+
+    if [ -n "$stale_pids" ]; then
+        echo "+-----------------------------------------------------------+"
+        echo "Stopping stale ARGoS process(es) on robot ports ${base_port}-${end_port}: ${stale_pids}"
+        kill $stale_pids 2>/dev/null || true
+        sleep 1
+    fi
+}
+
 echo "+-----------------------------------------------------------+"
 echo "MAINFOLDER IS $MAINFOLDER"
 
@@ -37,6 +71,8 @@ echo "+-----------------------------------------------------------+"
 echo "Cleaning logs folder..."
 
 rm -rf logs/*
+
+cleanup_stale_argos_ports
 
 if [ "$EXPLORER" = "True" ]; then
     unset TOYCHAIN_EXPLORER_LOCAL_DIR

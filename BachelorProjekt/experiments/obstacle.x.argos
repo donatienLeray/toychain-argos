@@ -143,7 +143,7 @@
       </placements>
     </camera>
 
-    <draw_bounding_box>false</draw_bounding_box>
+    <drawing bounding_box="false" />
   
     </qt-opengl>
 

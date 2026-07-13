@@ -20,6 +20,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import ticker
+from matplotlib.lines import Line2D
+from matplotlib.colors import to_rgb
 
 SAVED_DIR = Path("/home/dodo/experiment_picker_saves")
 PLOT_DIR = Path('plots')
@@ -29,6 +31,9 @@ DEFAULT_PLOT_DPI = 300
 SHOW_OUTLIERS = False
 # When True, boxplots will overlay jittered raw data points. Toggleable from the notebook.
 SHOW_DATA_POINTS = False
+# When True, data from different experiments is kept separate even if it shares the
+# same consensus name. Charts then use prefixed labels such as "1#C-PoA".
+SEPARATE_EXPERIMENT_DATA = True
 
 
 def configure_plot_saving(enabled=True, plot_dir='plots', dpi=300):
@@ -500,6 +505,7 @@ class ExperimentPicker:
         globals()['block_produced_hash'] = bundle.get('block_produced_hash', {})
         globals()['loaded_blocks'] = bundle.get('loaded_blocks', {})
         globals()['robot_speeds'] = bundle.get('robot_speeds', {})
+        globals()['loaded_zones'] = bundle.get('loaded_zones', {})
         globals()['selected_csv_map'] = bundle.get('selected_csv_map', {})
 
         with self.output:
@@ -692,6 +698,62 @@ def _extract_config_info(exp_key: str) -> Tuple[str, int]:
 
 def _top_level_experiment_name(exp_key: str) -> str:
     return exp_key.split('/', 1)[0] if '/' in exp_key else exp_key
+
+
+def _prefix_experiment_key(exp_key: str, experiment_index: int) -> str:
+    if not SEPARATE_EXPERIMENT_DATA:
+        return exp_key
+
+    if '/' in exp_key:
+        base, suffix = exp_key.rsplit('/', 1)
+        return f"{base}/{experiment_index}#{suffix}"
+
+    return f"{experiment_index}#{exp_key}"
+
+
+def _experiment_legend_label(exp_key: str) -> str:
+    top_level = _top_level_experiment_name(exp_key)
+    tail = exp_key.split('/', 1)[1] if '/' in exp_key else exp_key
+    match = re.match(r'^(?P<index>\d+)#\s*(?P<label>.+)$', tail)
+    if match:
+        return f"{match.group('index')}# {top_level}"
+    return top_level
+
+
+def _add_experiment_legend(fig, exp_keys: List[str], *, existing_handles=None, existing_labels=None):
+    if not SEPARATE_EXPERIMENT_DATA:
+        return
+
+    unique_labels = []
+    for exp_key in exp_keys:
+        label = _experiment_legend_label(exp_key)
+        if label not in unique_labels:
+            unique_labels.append(label)
+
+    if not unique_labels:
+        return
+
+    handles = []
+    labels = []
+    for label in unique_labels:
+        handles.append(Line2D([0], [0], color='none', marker='None', linestyle='none'))
+        labels.append(label)
+
+    if existing_handles and existing_labels:
+        handles = list(existing_handles) + handles
+        labels = list(existing_labels) + labels
+
+    if not handles:
+        return
+
+    fig.legend(
+        handles,
+        labels,
+        loc='lower center',
+        ncol=max(1, min(4, len(labels))),
+        frameon=False,
+        bbox_to_anchor=(0.5, -0.02),
+    )
 
 
 def _get_consensus_agent_groups(exp_choices: List[str]) -> Dict[Tuple[str, str], List[str]]:
@@ -912,10 +974,19 @@ def _list_saved_experiments() -> List[str]:
 
 
 def _get_experiment_subset(data: Dict, exp_key: str) -> Dict:
-    return {k: v for k, v in data.items() if k == exp_key or k.startswith(f"{exp_key}/")}
+    subset = {}
+    for k, v in data.items():
+        if k == exp_key or k.startswith(f"{exp_key}/"):
+            subset[k] = v
+            continue
+
+        if SEPARATE_EXPERIMENT_DATA and k.endswith(f"#{exp_key}"):
+            subset[k] = v
+
+    return subset
 
 
-def _save_experiment_bundle(exp_key: str, loaded: Dict, block_counts: Dict, block_hashes: Dict, loaded_blocks: Dict, robot_speeds: Dict, selected_csv_map: Dict):
+def _save_experiment_bundle(exp_key: str, loaded: Dict, block_counts: Dict, block_hashes: Dict, loaded_blocks: Dict, robot_speeds: Dict, loaded_zones: Dict, selected_csv_map: Dict):
     SAVED_DIR.mkdir(parents=True, exist_ok=True)
     bundle = {
         'loaded_data': _get_experiment_subset(loaded, exp_key),
@@ -923,6 +994,7 @@ def _save_experiment_bundle(exp_key: str, loaded: Dict, block_counts: Dict, bloc
         'block_produced_hash': _get_experiment_subset(block_hashes, exp_key),
         'loaded_blocks': _get_experiment_subset(loaded_blocks, exp_key),
         'robot_speeds': _get_experiment_subset(robot_speeds, exp_key),
+        'loaded_zones': _get_experiment_subset(loaded_zones, exp_key),
         'selected_csv_map': {exp_key: selected_csv_map.get(exp_key)} if selected_csv_map else {},
     }
     with open(SAVED_DIR / f"{exp_key}.pkl", 'wb') as f:
@@ -935,6 +1007,29 @@ def _load_experiment_bundle(exp_key: str) -> Optional[Dict]:
         return None
     with open(path, 'rb') as f:
         return pickle.load(f)
+
+
+def _get_experiment_length_seconds(default: Optional[float] = None) -> Optional[float]:
+    """Read LENGTH from experimentconfig.sh if available."""
+    length_re = re.compile(r'^\s*export\s+LENGTH\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*$')
+    search_paths = [
+        Path(__file__).resolve().parents[1] / 'experimentconfig.sh',
+        Path(__file__).resolve().parents[1] / 'logs' / 'experimentconfig.sh',
+    ]
+
+    for candidate in search_paths:
+        if not candidate.exists():
+            continue
+        try:
+            with open(candidate, 'r', encoding='utf-8', errors='replace') as f:
+                for line in f:
+                    match = length_re.match(line)
+                    if match:
+                        return float(match.group(1))
+        except Exception:
+            continue
+
+    return default
 
 
 def _load_block_observations(block_observations_path: Path) -> Dict[str, pd.DataFrame]:
@@ -967,6 +1062,127 @@ def _load_block_observations(block_observations_path: Path) -> Dict[str, pd.Data
     for block_hash, block_df in df.groupby('block_hash', sort=False):
         block_frames[str(block_hash)] = block_df.reset_index(drop=True).copy()
     return block_frames
+
+
+def _load_zone_events(zone_path: Path) -> Optional[pd.DataFrame]:
+    """Load trap-zone enter/exit events from zone.csv."""
+    if not zone_path.exists():
+        return None
+
+    try:
+        raw_text = zone_path.read_text(encoding='utf-8', errors='replace')
+    except Exception as exc:
+        warnings.warn(f"Failed to read zone log {zone_path}: {exc}", UserWarning)
+        return None
+
+    event_re = re.compile(r'(?P<TIME>-?\d+(?:\.\d+)?)\s+(?P<EVENT>ENTER|EXIT)\b')
+    records = [{'TIME': match.group('TIME'), 'EVENT': match.group('EVENT')} for match in event_re.finditer(raw_text)]
+    if records:
+        df = pd.DataFrame(records)
+    else:
+        try:
+            df = pd.read_csv(zone_path, sep=r'\s+')
+        except Exception as exc:
+            warnings.warn(f"Failed to parse zone log {zone_path}: {exc}", UserWarning)
+            return None
+
+    if df.empty or 'TIME' not in df.columns or 'EVENT' not in df.columns:
+        return None
+
+    df = df.copy()
+    df['TIME'] = pd.to_numeric(df['TIME'], errors='coerce')
+    df['EVENT'] = df['EVENT'].astype(str).str.upper()
+
+    for column in ['ID', 'X', 'Y', 'XMIN', 'XMAX', 'YMIN', 'YMAX']:
+        if column in df.columns:
+            df[column] = pd.to_numeric(df[column], errors='coerce')
+
+    df = df[df['TIME'].notna() & df['EVENT'].isin(['ENTER', 'EXIT'])].sort_values('TIME').reset_index(drop=True)
+    return df if not df.empty else None
+
+
+def _compute_trap_residence_seconds(zone_df: Optional[pd.DataFrame], experiment_length_seconds: Optional[float] = None) -> Optional[float]:
+    """Compute total time spent inside the trap zone from ENTER/EXIT events."""
+    if zone_df is None or not isinstance(zone_df, pd.DataFrame) or zone_df.empty:
+        return None
+    if 'TIME' not in zone_df.columns or 'EVENT' not in zone_df.columns:
+        return None
+
+    ordered = zone_df[['TIME', 'EVENT']].copy()
+    ordered['TIME'] = pd.to_numeric(ordered['TIME'], errors='coerce')
+    ordered['EVENT'] = ordered['EVENT'].astype(str).str.upper()
+    ordered = ordered[ordered['TIME'].notna() & ordered['EVENT'].isin(['ENTER', 'EXIT'])]
+    if ordered.empty:
+        return None
+
+    ordered = ordered.sort_values('TIME', kind='mergesort').reset_index(drop=True)
+
+    total_seconds = 0.0
+    enter_time = None
+
+    for _, row in ordered.iterrows():
+        current_time = float(row['TIME'])
+        event = row['EVENT']
+
+        if event == 'ENTER':
+            if enter_time is None:
+                enter_time = current_time
+            continue
+
+        if event == 'EXIT' and enter_time is not None:
+            if current_time >= enter_time:
+                total_seconds += current_time - enter_time
+            enter_time = None
+
+    if enter_time is not None:
+        end_time = experiment_length_seconds
+        if end_time is None or not np.isfinite(end_time):
+            end_time = float(ordered['TIME'].max())
+        if end_time > enter_time:
+            total_seconds += end_time - enter_time
+
+    return float(total_seconds)
+
+
+def _load_zones_for_loaded_data(data_dir: Optional[Path] = None) -> Dict:
+    """Load zone.csv files for the currently loaded experiments.
+
+    This is used as a fallback when TRT is requested before the notebook has
+    cached `loaded_zones` in memory.
+    """
+    loaded_data = globals().get('loaded_data', {})
+    if not isinstance(loaded_data, dict) or not loaded_data:
+        return {}
+
+    if data_dir is None:
+        data_dir = Path(__file__).resolve().parent / 'data'
+    data_dir = Path(data_dir)
+
+    loaded_zones: Dict = {}
+    for exp_key, runs in loaded_data.items():
+        exp_path = data_dir / Path(exp_key)
+        if not exp_path.exists():
+            continue
+
+        for run_name, robots_dict in runs.items():
+            if not isinstance(robots_dict, dict) or not robots_dict:
+                continue
+
+            run_path = exp_path / str(run_name)
+            if not run_path.exists():
+                continue
+
+            run_zone_dict = loaded_zones.setdefault(exp_key, {}).setdefault(str(run_name), {})
+            for robot_id in robots_dict.keys():
+                zone_path = run_path / str(robot_id) / 'zone.csv'
+                zone_df = _load_zone_events(zone_path)
+                if zone_df is not None:
+                    run_zone_dict[robot_id] = zone_df
+
+    if loaded_zones:
+        globals()['loaded_zones'] = loaded_zones
+
+    return loaded_zones
 
 
 def _load_robot_speed_from_monitor_log(log_path: Path, robot_key: int) -> Optional[float]:
@@ -1097,12 +1313,13 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
         block_hashes = globals().get('block_produced_hash', {})
         loaded_blocks = globals().get('loaded_blocks', {})
         robot_speeds = globals().get('robot_speeds', {})
+        loaded_zones = globals().get('loaded_zones', {})
         selected_csv_map = globals().get('selected_csv_map', {})
         saved_any = False
         saved_paths = []
         for exp_key in radio_map.keys():
             if _get_experiment_subset(loaded, exp_key):
-                _save_experiment_bundle(exp_key, loaded, block_counts, block_hashes, loaded_blocks, robot_speeds, selected_csv_map)
+                _save_experiment_bundle(exp_key, loaded, block_counts, block_hashes, loaded_blocks, robot_speeds, loaded_zones, selected_csv_map)
                 saved_paths.append(SAVED_DIR / f"{exp_key}.pkl")
                 saved_any = True
         with out:
@@ -1125,15 +1342,18 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
             block_produced_hash = {}
             loaded_blocks = {}
             robot_speeds = {}
+            loaded_zones = {}
             # Record the chosen csv basename per experiment so other helpers can know which was chosen
             selected_csv_map = {}
+            experiment_labels = {}
 
-            for exp_key, (rb, base_paths_dict, probe_dirs) in radio_map.items():
+            for exp_index, (exp_key, (rb, base_paths_dict, probe_dirs)) in enumerate(radio_map.items(), start=1):
                 sel = rb.value
                 if not sel:
                     continue
 
                 selected_csv_map[exp_key] = sel
+                top_level_name = _top_level_experiment_name(exp_key)
 
                 # Collect runs across all base paths belonging to this experiment. Each base_path
                 # may be either the experiment root (key==exp_key) or a specific config (key=="exp/cfg").
@@ -1156,11 +1376,15 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
 
                 for run, keys in sorted(run_to_keys.items(), key=lambda kv: kv[0].name):
                     for base_key in sorted(keys):
-                        run_dict = loaded.setdefault(base_key, {}).setdefault(run.name, {})
-                        count_dict = block_production_counts.setdefault(base_key, {}).setdefault(run.name, {})
-                        hash_dict = block_produced_hash.setdefault(base_key, {}).setdefault(run.name, {})
-                        blocks_dict = loaded_blocks.setdefault(base_key, {}).setdefault(run.name, {})
-                        speed_dict = robot_speeds.setdefault(base_key, {}).setdefault(run.name, {})
+                        store_key = _prefix_experiment_key(base_key, exp_index)
+                        experiment_labels[store_key] = f"{exp_index}# {top_level_name}"
+
+                        run_dict = loaded.setdefault(store_key, {}).setdefault(run.name, {})
+                        count_dict = block_production_counts.setdefault(store_key, {}).setdefault(run.name, {})
+                        hash_dict = block_produced_hash.setdefault(store_key, {}).setdefault(run.name, {})
+                        blocks_dict = loaded_blocks.setdefault(store_key, {}).setdefault(run.name, {})
+                        speed_dict = robot_speeds.setdefault(store_key, {}).setdefault(run.name, {})
+                        zone_dict = loaded_zones.setdefault(store_key, {}).setdefault(run.name, {})
                         # robot dirs inside run — numeric names starting at 1; exclude '0'
                         robots = sorted([d for d in run.iterdir() if d.is_dir() and d.name.isdigit() and int(d.name) != 0], key=lambda p: int(p.name))
                         if not robots:
@@ -1188,6 +1412,11 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
                                 
                                 # Store the DataFrame directly (no csv_basename key level)
                                 run_dict[robot_key] = df
+
+                            zone_path = robot / 'zone.csv'
+                            zone_df = _load_zone_events(zone_path)
+                            if zone_df is not None:
+                                zone_dict[robot_key] = zone_df
                             
                             # Load block production count from monitor.log
                             log_path = robot / 'monitor.log'
@@ -1217,7 +1446,9 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
             globals()['block_produced_hash'] = block_produced_hash
             globals()['loaded_blocks'] = loaded_blocks
             globals()['robot_speeds'] = robot_speeds
+            globals()['loaded_zones'] = loaded_zones
             globals()['selected_csv_map'] = selected_csv_map
+            globals()['experiment_labels'] = experiment_labels
             
             out.clear_output()
             with out:
@@ -1226,11 +1457,13 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
                     total_blocks = sum(count for exp_data in block_production_counts.values() for robots in exp_data.values() for count in robots.values())
                     total_observed_blocks = sum(len(blocks) for exp_data in loaded_blocks.values() for blocks in exp_data.values())
                     total_speeds = sum(1 for exp_data in robot_speeds.values() for robots in exp_data.values() for speed in robots.values() if speed is not None)
+                    total_zone_logs = sum(len(robots) for exp_data in loaded_zones.values() for robots in exp_data.values())
                     print(f"✓ Data loaded successfully!")
                     print(f"  - {total_robots} robot datasets")
                     print(f"  - {total_blocks:,} total blocks produced")
                     print(f"  - {total_observed_blocks:,} observed block hashes")
                     print(f"  - {total_speeds:,} robot speeds")
+                    print(f"  - {total_zone_logs:,} trap-zone logs")
                     save_btn.layout.display = 'block'
                 else:
                     print("❌ Error: No data was loaded. Please check your experiment selection and try again.")
@@ -1566,6 +1799,7 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None,
             with preview_out:
                 preview_out.clear_output()
                 intervals_by_consensus = {}
+                legend_exp_keys = []
 
                 selected_agents, consensus_types = _resolve_grouped_consensus_selection(grouped_mode)
 
@@ -1576,6 +1810,7 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None,
                     for exp_key in exp_keys:
                         if not exp_key:
                             continue
+                        legend_exp_keys.append(exp_key)
                         consensus_intervals.extend(_compute_reception_intervals(exp_key))
 
                     if consensus_intervals:
@@ -1633,6 +1868,7 @@ def show_reception_bins(xlabel=None, ylabel='Cumulative Percentage', title=None,
                     axes[idx // ncols][idx % ncols].set_visible(False)
 
                 fig.suptitle(title if title is not None else f'Block Reception Interval Distribution (Agents: {grouped_mode.agents_drop.value})', fontsize=13)
+                _add_experiment_legend(fig, legend_exp_keys)
                 plt.tight_layout()
                 _save_plot_if_needed(
                     fig,
@@ -1911,6 +2147,7 @@ def show_block_propagation_delay(threshold=0.8, title=None, xlabel='Number of Ag
                     'consensus': consensus,
                     'num_agents': num_agents,
                     'rep': rep_name,
+                    'exp_key': exp_key,
                     'block_propagation_delay_sec': delay,
                     'block_hash': str(block_hash),
                 })
@@ -1977,6 +2214,7 @@ def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', titl
             with preview_out:
                 preview_out.clear_output()
                 delays_by_consensus = {}
+                legend_exp_keys = []
 
                 selected_agents, consensus_types = _resolve_grouped_consensus_selection(grouped_mode)
 
@@ -1987,6 +2225,7 @@ def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', titl
                     for exp_key in exp_keys:
                         if not exp_key:
                             continue
+                        legend_exp_keys.append(exp_key)
                         consensus_delays.extend(_compute_delays(exp_key, rep_sel='All', robot_sel='All'))
 
                     if consensus_delays:
@@ -2042,6 +2281,7 @@ def show_production_delay_bins(xlabel=None, ylabel='Cumulative Percentage', titl
                     axes[idx // ncols][idx % ncols].set_visible(False)
 
                 fig.suptitle(title if title is not None else f'Block Production Delay Distribution (Agents: {grouped_mode.agents_drop.value})', fontsize=13)
+                _add_experiment_legend(fig, legend_exp_keys)
                 plt.tight_layout()
                 _save_plot_if_needed(
                     fig,
@@ -2169,6 +2409,7 @@ def show_production_delay_mean_overview(title=None, xlabel='Number of Agents', y
                 'consensus': consensus,
                 'num_agents': num_agents,
                 'rep': rep_name,
+                'exp_key': exp_key,
                 'mean_bpd_sec': float(np.mean(delays) / 10.0),
                 'n_delays': int(len(delays)),
             })
@@ -2240,102 +2481,137 @@ def _create_consensus_boxplot_visualization(
     else:
         ylim_to_use = ylim
     
-    # Get unique consensus types and assign colors
+    # Get unique consensus variants and split prefixed values like "1#PoA" into
+    # experiment index "1" and base consensus "PoA".
     consensus_types = sorted(plot_df['consensus'].unique())
-    n_consensus = len(consensus_types)
-    
-    # Use tab20 colormap for more distinct colors if needed
-    if n_consensus <= 10:
-        colors = plt.cm.tab10(np.linspace(0, 1, min(n_consensus, 10)))
-    else:
-        colors = plt.cm.tab20(np.linspace(0, 1, min(n_consensus, 20)))
-    color_map = dict(zip(consensus_types, colors))
-    fixed_colors = {
-        'C-PoA': 'red',
-        'C_PoA': 'red',
-        'CPoA': 'red',
-        'PoA': '#00008B',
+    agent_counts = sorted(plot_df['num_agents'].unique())
+
+    def _split_consensus_variant(consensus_name: str) -> Tuple[Optional[int], str, str]:
+        text = str(consensus_name)
+        m = re.match(r'^\s*(\d+)#\s*(.+)$', text)
+        if not m:
+            return None, text, text
+        idx = int(m.group(1))
+        base = m.group(2).strip()
+        normalized = f"{idx}#{base}"
+        return idx, base, normalized
+
+    def _base_consensus_name(consensus_name: str) -> str:
+        _, base, _ = _split_consensus_variant(consensus_name)
+        return base
+
+    def _variant_sort_key(consensus_name: str):
+        idx, base, normalized = _split_consensus_variant(consensus_name)
+        idx_sort = idx if idx is not None else 10**9
+        return (base.lower(), idx_sort, normalized.lower())
+
+    def _mix_with_white(color, mix_ratio: float):
+        base = np.array(to_rgb(color), dtype=float)
+        white = np.array([1.0, 1.0, 1.0], dtype=float)
+        ratio = float(np.clip(mix_ratio, 0.0, 0.85))
+        mixed = (1.0 - ratio) * base + ratio * white
+        return tuple(mixed)
+
+    # Color families by base consensus; experiment variants are shades of that family.
+    base_names = sorted({_base_consensus_name(c) for c in consensus_types})
+    fixed_base_colors = {
+        'C-PoA': '#2ca25f',
+        'C_PoA': '#2ca25f',
+        'CPoA': '#2ca25f',
+        'PoA': '#1f4fbf',
         'R-PoA': '#4ebce0',
         'R-PoA2': '#ff8c42',
         'R_PoA2': '#ff8c42',
         'RPoA2': '#ff8c42',
-        'PoW': '#20e820',
+        'PoW': '#2ca02c',
     }
-    for key, value in fixed_colors.items():
-        if key in color_map:
-            color_map[key] = value
-    
-    # Get unique agent counts for x-axis positions
-    agent_counts = sorted(plot_df['num_agents'].unique())
-    
-    # Determine grid layout based on number of consensus types
-    # Use 2 columns for <= 6, 3 columns for 7-12, 4 columns for > 12
-    if n_consensus <= 6:
-        n_cols = 2
-    elif n_consensus <= 12:
-        n_cols = 3
+    fallback_palette = plt.cm.tab20(np.linspace(0, 1, max(1, len(base_names))))
+    base_color_map = {}
+    for i, base in enumerate(base_names):
+        base_color_map[base] = fixed_base_colors.get(base, fallback_palette[i % len(fallback_palette)])
+
+    variants_by_base: Dict[str, List[str]] = {}
+    for consensus in consensus_types:
+        base = _base_consensus_name(consensus)
+        variants_by_base.setdefault(base, []).append(consensus)
+    for base in variants_by_base:
+        variants_by_base[base] = sorted(variants_by_base[base], key=_variant_sort_key)
+
+    color_map = {}
+    for base, variants in variants_by_base.items():
+        n_variants = len(variants)
+        if n_variants <= 1:
+            color_map[variants[0]] = base_color_map[base]
+            continue
+        shade_steps = np.linspace(0.0, 0.45, n_variants)
+        for variant, shade in zip(variants, shade_steps):
+            color_map[variant] = _mix_with_white(base_color_map[base], shade)
+
+    # One boxplot subplot per base consensus family + one comparison line chart.
+    n_base = max(1, len(base_names))
+    if n_base <= 3:
+        n_cols = n_base
     else:
-        n_cols = 4
-    
-    n_rows = math.ceil(n_consensus / n_cols)
-    
-    # Create figure with dynamic grid: n_rows for boxplots + 1 for line chart
-    fig = plt.figure(figsize=(6 * n_cols, 4 * n_rows + 5))
-    gs = fig.add_gridspec(n_rows + 1, n_cols, hspace=0.3, wspace=0.3)
-    
-    # Create boxplot subplots (one per consensus)
-    for idx, consensus in enumerate(consensus_types):
-        row = idx // n_cols
-        col = idx % n_cols
-        ax = fig.add_subplot(gs[row, col])
-        
-        # Prepare data for this consensus
-        positions = []
-        box_data = []
-        
-        for i, n_agents in enumerate(agent_counts):
-            subset = plot_df[(plot_df['num_agents'] == n_agents) & (plot_df['consensus'] == consensus)]
-            if not subset.empty:
-                positions.append(i)
-                box_data.append(subset[metric_column].values)
-        
-        if box_data:
-            # Respect global SHOW_OUTLIERS flag (can be toggled from the notebook)
-            show_outliers = bool(globals().get('SHOW_OUTLIERS', True))
-            show_data_points = bool(globals().get('SHOW_DATA_POINTS', False))
-            rng = np.random.default_rng(0)
-            bp = ax.boxplot(
+        n_cols = min(3, n_base)
+    n_rows = math.ceil(n_base / n_cols)
+
+    fig = plt.figure(figsize=(max(12, 5 * n_cols), 4.2 * n_rows + 5.2))
+    gs = fig.add_gridspec(n_rows + 1, n_cols, hspace=0.32, wspace=0.25)
+
+    # Respect global toggles (can be changed from the notebook)
+    show_outliers = bool(globals().get('SHOW_OUTLIERS', True))
+    show_data_points = bool(globals().get('SHOW_DATA_POINTS', False))
+
+    for base_idx, base in enumerate(base_names):
+        row = base_idx // n_cols
+        col = base_idx % n_cols
+        ax_box = fig.add_subplot(gs[row, col])
+
+        # For this base consensus only, keep experiment variants side-by-side
+        # for each agent count, e.g. 1#PoA 5, 2#PoA 5, 1#PoA 10, 2#PoA 10.
+        ordered_variants = []
+        base_variants = variants_by_base.get(base, [])
+        for n_agents in agent_counts:
+            for variant in base_variants:
+                subset = plot_df[(plot_df['num_agents'] == n_agents) & (plot_df['consensus'] == variant)]
+                if subset.empty:
+                    continue
+                ordered_variants.append((n_agents, variant, subset[metric_column].values))
+
+        if ordered_variants:
+            positions = list(range(len(ordered_variants)))
+            box_data = [vals for _, _, vals in ordered_variants]
+            bp = ax_box.boxplot(
                 box_data,
                 positions=positions,
-                widths=0.6,
+                widths=0.65,
                 patch_artist=True,
                 showfliers=False,
             )
-            
-            # Color all boxes with consensus color
-            for patch in bp['boxes']:
-                patch.set_facecolor(color_map[consensus])
-                patch.set_alpha(0.7)
+
+            for patch, (_, variant, _) in zip(bp['boxes'], ordered_variants):
+                patch.set_facecolor(color_map[variant])
+                patch.set_alpha(0.78)
 
             if show_data_points:
-                for pos, values in zip(positions, box_data):
+                for pos, (_, variant, values) in zip(positions, ordered_variants):
                     point_values = np.asarray(values, dtype=np.float64)
                     point_values = point_values[np.isfinite(point_values)]
                     if point_values.size == 0:
                         continue
-                    point_x = np.full(point_values.size, pos + 0.44, dtype=np.float64)
-                    ax.scatter(
+                    point_x = np.full(point_values.size, pos + 0.28, dtype=np.float64)
+                    ax_box.scatter(
                         point_x,
                         point_values,
                         s=14,
                         alpha=0.22,
-                        color=color_map[consensus],
+                        color=color_map[variant],
                         edgecolors='none',
                         zorder=2,
                     )
 
             if show_outliers:
-                for pos, values in zip(positions, box_data):
+                for pos, (_, _, values) in zip(positions, ordered_variants):
                     point_values = np.asarray(values, dtype=np.float64)
                     point_values = point_values[np.isfinite(point_values)]
                     if point_values.size == 0:
@@ -2349,10 +2625,10 @@ def _create_consensus_boxplot_visualization(
                     if outlier_values.size == 0:
                         continue
                     if show_data_points:
-                        outlier_x = np.full(outlier_values.size, pos + 0.44, dtype=np.float64)
+                        outlier_x = np.full(outlier_values.size, pos + 0.28, dtype=np.float64)
                     else:
                         outlier_x = np.full(outlier_values.size, pos, dtype=np.float64)
-                    ax.scatter(
+                    ax_box.scatter(
                         outlier_x,
                         outlier_values,
                         marker='*',
@@ -2362,23 +2638,33 @@ def _create_consensus_boxplot_visualization(
                         linewidths=0.5,
                         zorder=8,
                     )
-            
-            ax.set_xticks(range(len(agent_counts)))
-            ax.set_xticklabels(agent_counts)
-            ax.set_xlabel('Number of Agents')
-            ax.set_ylabel(ylabel)
-            ax.set_title(f'{consensus}', fontweight='bold', fontsize=11)
-            ax.grid(axis='y', linestyle='--', alpha=0.3)
-            
-            # Keep one consistent y-scale across all consensus subplots.
-            if ylim_to_use is not None:
-                ax.set_ylim(ylim_to_use)
-    
-    # Create line chart comparing all consensus algorithms (spanning all columns at bottom)
+
+            xticklabels = [f"{variant} {n_agents}" for n_agents, variant, _ in ordered_variants]
+            ax_box.set_xticks(positions)
+            ax_box.set_xticklabels(xticklabels, rotation=55, ha='right', fontsize=9)
+        else:
+            ax_box.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax_box.transAxes)
+
+        ax_box.set_xlabel('Variant and #Agents')
+        ax_box.set_ylabel(ylabel)
+        ax_box.set_title(base, fontweight='bold', fontsize=11)
+        ax_box.grid(axis='y', linestyle='--', alpha=0.3)
+
+        if ylim_to_use is not None:
+            ax_box.set_ylim(ylim_to_use)
+
+    # Hide any unused grid slots in the boxplot area.
+    for idx in range(len(base_names), n_rows * n_cols):
+        row = idx // n_cols
+        col = idx % n_cols
+        ax_unused = fig.add_subplot(gs[row, col])
+        ax_unused.axis('off')
+
+    # Create line chart comparing all consensus variants (spanning full width at bottom)
     ax_line = fig.add_subplot(gs[n_rows, :])
-    
+
     cpoa_keys = {'C-PoA', 'C_PoA', 'CPoA'}
-    line_consensus_order = [c for c in consensus_types if c not in cpoa_keys] + [c for c in consensus_types if c in cpoa_keys]
+    line_consensus_order = sorted(consensus_types, key=lambda c: (_base_consensus_name(c) in cpoa_keys, _variant_sort_key(c)))
 
     for consensus in line_consensus_order:
         trend_agents = []
@@ -2416,7 +2702,11 @@ def _create_consensus_boxplot_visualization(
     # Overall title
     fig.suptitle(plot_title, fontsize=14, fontweight='bold', y=0.995)
     
-    plt.tight_layout()
+    if SEPARATE_EXPERIMENT_DATA and 'exp_key' in plot_df.columns:
+        _add_experiment_legend(fig, list(plot_df['exp_key'].dropna().astype(str).unique()))
+        plt.tight_layout(rect=(0, 0.05, 1, 0.98))
+    else:
+        plt.tight_layout()
     _save_plot_if_needed(
         fig,
         plot_name=plot_name or plot_title,
@@ -2480,6 +2770,7 @@ def show_efficiency_boxplot(save_path=None, dpi=None):
                     'consensus': consensus,
                     'num_agents': num_agents,
                     'rep': rep_name,
+                    'exp_key': exp_key,
                     'efficiency_pct': efficiency_pct,
                     'max_height': max_height,
                     'total_blocks': total_blocks_produced,
@@ -2530,6 +2821,7 @@ def show_total_produced_blocks_boxplot(save_path=None, dpi=None):
                     'consensus': consensus,
                     'num_agents': num_agents,
                     'rep': rep_name,
+                    'exp_key': exp_key,
                     'total_blocks_produced': total_blocks_produced,
                 })
 
@@ -2580,6 +2872,7 @@ def show_agent_speed_boxplot(save_path=None, dpi=None):
                     'consensus': consensus,
                     'num_agents': num_agents,
                     'rep': rep_name,
+                    'exp_key': exp_key,
                     'robot': robot_id,
                     'agent_speed': float(speed),
                 })
@@ -2707,6 +3000,7 @@ def show_bpa_gini_main_chain_boxplot(save_path=None, dpi=None):
                 'consensus': consensus,
                 'num_agents': num_agents,
                 'rep': rep_name,
+                'exp_key': exp_key,
                 'decentralization_main_chain': decentralization_val,
                 'main_chain_blocks': int(sum(counts.values())),
                 'n_robots': int(len(counts)),
@@ -2844,6 +3138,7 @@ def show_vulnerability_boxplot(save_path=None, dpi=None):
                 'consensus': consensus,
                 'num_agents': num_agents,
                 'rep': rep_name,
+                'exp_key': exp_key,
                 'nakamoto_coefficient': nakamoto_coefficient,
                 'main_chain_difficulty': total_difficulty,
                 'n_robots': int(len(difficulty_values)),
@@ -2986,6 +3281,7 @@ def show_agreement_boxplot(save_path=None, dpi=None):
                     'consensus': consensus,
                     'num_agents': num_agents,
                     'rep': rep_name,
+                    'exp_key': exp_key,
                     'mainchain_obs_pct': mainchain_obs_pct,
                     'observations_of_mainchain': int(obs_mainchain_count),
                     'total_observations': total_observations,
@@ -3173,6 +3469,7 @@ def show_block_production_by_robot(save_path=None, dpi=None):
             with preview_out:
                 preview_out.clear_output()
                 robot_data_by_consensus = {}
+                legend_exp_keys = []
 
                 selected_agents, consensus_types = _resolve_grouped_consensus_selection(grouped_mode)
 
@@ -3183,6 +3480,7 @@ def show_block_production_by_robot(save_path=None, dpi=None):
                     for exp_key in exp_keys:
                         if not exp_key:
                             continue
+                        legend_exp_keys.append(exp_key)
                         robot_blocks = _compute_robot_blocks(exp_key, rep_drop.value)
                         for rid, counts in robot_blocks.items():
                             if rid not in merged_blocks:
@@ -3283,6 +3581,7 @@ def show_block_production_by_robot(save_path=None, dpi=None):
 
                 run_label = 'All runs' if rep_drop.value == 'All' else f'Run {rep_drop.value}'
                 fig.suptitle(f'Block Production by Robot (Agents: {grouped_mode.agents_drop.value}, {run_label})', fontsize=13)
+                _add_experiment_legend(fig, legend_exp_keys)
                 plt.tight_layout()
                 _save_plot_if_needed(
                     fig,
@@ -3332,3 +3631,81 @@ def show_block_production_by_robot(save_path=None, dpi=None):
 
     # Fallback for unsupported naming formats
     print("Not supported for this experiment format. Use experiments with consensus_number pattern.")
+
+
+def show_trap_residence_time_boxplot(save_path=None, dpi=None):
+    """Boxplot of trap residence time per robot, grouped by consensus and number of agents.
+
+    The metric is computed from each robot's zone.csv by pairing ENTER/EXIT events,
+    then aggregated per run and normalized by experiment duration times number of agents.
+    """
+
+    loaded_zones = globals().get('loaded_zones', {})
+    if not loaded_zones:
+        loaded_zones = _load_zones_for_loaded_data()
+
+    if not loaded_zones:
+        print("No trap-zone data available. Load experiment data first so the plot can read zone.csv files.")
+        return
+
+    exp_choices = sorted(loaded_zones.keys())
+    experiment_length = _get_experiment_length_seconds()
+
+    if experiment_length is None:
+        print("Could not read LENGTH from experimentconfig.sh. Falling back to each zone log's latest timestamp.")
+
+    rows = []
+    for exp_key in exp_choices:
+        consensus, num_agents = _extract_config_info(exp_key)
+        if consensus is None or num_agents is None:
+            print(f"Skipping {exp_key}: doesn't match consensus_number pattern")
+            continue
+
+        for rep_name, robots_dict in loaded_zones.get(exp_key, {}).items():
+            if not isinstance(robots_dict, dict) or not robots_dict:
+                continue
+
+            total_trap_seconds = 0.0
+            counted_robots = 0
+            for robot_id, zone_df in robots_dict.items():
+                trap_seconds = _compute_trap_residence_seconds(zone_df, experiment_length)
+                if trap_seconds is None:
+                    continue
+                total_trap_seconds += float(trap_seconds)
+                counted_robots += 1
+
+            if experiment_length is None or experiment_length <= 0:
+                continue
+
+            if counted_robots == 0:
+                continue
+
+            total_possible_seconds = float(experiment_length) * float(num_agents)
+            if total_possible_seconds <= 0:
+                continue
+
+            rows.append({
+                'consensus': consensus,
+                'num_agents': num_agents,
+                'rep': rep_name,
+                'exp_key': exp_key,
+                'trap_residence_sec': float(total_trap_seconds),
+                'trap_residence_pct': (float(total_trap_seconds) / total_possible_seconds) * 100.0,
+                'experiment_length_sec': float(experiment_length),
+                'counted_robots': int(counted_robots),
+            })
+
+    plot_df = pd.DataFrame(rows)
+
+    _create_consensus_boxplot_visualization(
+        plot_df=plot_df,
+        metric_column='trap_residence_pct',
+        ylabel='Trap residence time (%)',
+        plot_title='Trap Residence Time (TRT)',
+        comparison_title='Trap Residence Time Comparison Across Consensus Algorithms',
+        ylim=(0, 100),
+        no_data_message='No trap residence data found. Ensure zone.csv files with ENTER/EXIT events are loaded.',
+        save_path=save_path,
+        dpi=dpi,
+        plot_name='trap_residence_time_boxplot',
+    )
