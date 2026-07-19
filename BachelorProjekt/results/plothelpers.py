@@ -164,7 +164,7 @@ class ExperimentPicker:
         self._multi_exp_container = widgets.VBox(checkbox_items, layout=widgets.Layout(width="80%", max_height="auto", overflow="auto"))
 
         self.load_button = widgets.Button(
-            description="Choose experiment(s)",
+            description="Load experiment(s)",
             button_style="primary",
             disabled=False,
         )
@@ -701,7 +701,7 @@ def _top_level_experiment_name(exp_key: str) -> str:
 
 
 def _prefix_experiment_key(exp_key: str, experiment_index: int) -> str:
-    if not SEPARATE_EXPERIMENT_DATA:
+    if not globals().get('EXPERIMENT_VARIANT_PREFIXING', False):
         return exp_key
 
     if '/' in exp_key:
@@ -714,14 +714,19 @@ def _prefix_experiment_key(exp_key: str, experiment_index: int) -> str:
 def _experiment_legend_label(exp_key: str) -> str:
     top_level = _top_level_experiment_name(exp_key)
     tail = exp_key.split('/', 1)[1] if '/' in exp_key else exp_key
+    cleaned_top_level = re.sub(r'^experiment_\d+[_-]*', '', top_level, flags=re.IGNORECASE)
+    cleaned_top_level = cleaned_top_level.replace('_', ' ').strip()
+    cleaned_top_level = re.sub(r'\s+', ' ', cleaned_top_level).strip()
+    if not cleaned_top_level:
+        cleaned_top_level = top_level.replace('_', ' ').strip()
     match = re.match(r'^(?P<index>\d+)#\s*(?P<label>.+)$', tail)
     if match:
-        return f"{match.group('index')}# {top_level}"
-    return top_level
+        return fr"$\mathbf{{{match.group('index')}\#}}$ {cleaned_top_level}"
+    return cleaned_top_level
 
 
 def _add_experiment_legend(fig, exp_keys: List[str], *, existing_handles=None, existing_labels=None):
-    if not SEPARATE_EXPERIMENT_DATA:
+    if not globals().get('EXPERIMENT_VARIANT_PREFIXING', False):
         return
 
     unique_labels = []
@@ -749,10 +754,11 @@ def _add_experiment_legend(fig, exp_keys: List[str], *, existing_handles=None, e
     fig.legend(
         handles,
         labels,
-        loc='lower center',
+        loc='upper center',
         ncol=max(1, min(4, len(labels))),
         frameon=False,
-        bbox_to_anchor=(0.5, -0.02),
+        bbox_to_anchor=(0.5, 0.975),
+        fontsize=12,
     )
 
 
@@ -1266,38 +1272,16 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
             if probe_dir and probe_dir.exists():
                 info['probe_dirs'].add(probe_dir)
 
-    radio_map = {}  # exp_key -> (RadioButtons, base_paths_dict, probe_dirs_list)
-    widgets_list = []
-
+    exp_items = []
     for exp_key, info in sorted(exp_map.items()):
         probe_dirs = info['probe_dirs']
         base_paths_dict = info['base_paths']
-
         if not probe_dirs:
-            widgets_list.append(widgets.HTML(f"<b>{exp_key}</b>: no '1' folder found to probe CSVs"))
+            exp_items.append((exp_key, base_paths_dict, sorted(probe_dirs)))
             continue
+        exp_items.append((exp_key, base_paths_dict, sorted(probe_dirs)))
 
-        # Collect all csv stems across probe dirs for this experiment
-        csv_stems = set()
-        for probe_dir in probe_dirs:
-            for f in probe_dir.iterdir():
-                if f.suffix.lower() == '.csv':
-                    csv_stems.add(f.stem)
-
-        if not csv_stems:
-            widgets_list.append(widgets.HTML(f"<b>{exp_key}</b>: no CSV files found in {list(probe_dirs)[0]}"))
-            continue
-
-        options = sorted(csv_stems)
-        rb = widgets.RadioButtons(options=options, description='', layout=widgets.Layout(width='auto'))
-        rb.value = options[0]
-        radio_map[exp_key] = (rb, base_paths_dict, sorted(probe_dirs))
-        widgets_list.append(widgets.HBox([widgets.Label(f"{exp_key}:", layout=widgets.Layout(width='28%')), rb]))
-
-    # Add heading before the CSV picker
-    heading = widgets.HTML(value="<h4>Choose which CSV data to load</h4>")
-    container = widgets.VBox([heading] + widgets_list)
-    display(container)
+    display(widgets.VBox([]))
 
     out = widgets.Output()
     # Initially show "no data loaded"
@@ -1317,7 +1301,7 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
         selected_csv_map = globals().get('selected_csv_map', {})
         saved_any = False
         saved_paths = []
-        for exp_key in radio_map.keys():
+        for exp_key, _, _ in exp_items:
             if _get_experiment_subset(loaded, exp_key):
                 _save_experiment_bundle(exp_key, loaded, block_counts, block_hashes, loaded_blocks, robot_speeds, loaded_zones, selected_csv_map)
                 saved_paths.append(SAVED_DIR / f"{exp_key}.pkl")
@@ -1331,7 +1315,7 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
 
     save_btn.on_click(_save_data)
 
-    def _load_data(_):
+    def _load_data():
         out.clear_output()
         with out:
             print("Loading data...")
@@ -1346,12 +1330,11 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
             # Record the chosen csv basename per experiment so other helpers can know which was chosen
             selected_csv_map = {}
             experiment_labels = {}
+            experiment_variant_prefixing = bool(SEPARATE_EXPERIMENT_DATA and len(exp_items) > 1)
+            globals()['EXPERIMENT_VARIANT_PREFIXING'] = experiment_variant_prefixing
 
-            for exp_index, (exp_key, (rb, base_paths_dict, probe_dirs)) in enumerate(radio_map.items(), start=1):
-                sel = rb.value
-                if not sel:
-                    continue
-
+            for exp_index, (exp_key, base_paths_dict, probe_dirs) in enumerate(exp_items, start=1):
+                sel = 'block'
                 selected_csv_map[exp_key] = sel
                 top_level_name = _top_level_experiment_name(exp_key)
 
@@ -1377,7 +1360,10 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
                 for run, keys in sorted(run_to_keys.items(), key=lambda kv: kv[0].name):
                     for base_key in sorted(keys):
                         store_key = _prefix_experiment_key(base_key, exp_index)
-                        experiment_labels[store_key] = f"{exp_index}# {top_level_name}"
+                        if experiment_variant_prefixing:
+                            experiment_labels[store_key] = f"{exp_index}# {top_level_name}"
+                        else:
+                            experiment_labels[store_key] = top_level_name
 
                         run_dict = loaded.setdefault(store_key, {}).setdefault(run.name, {})
                         count_dict = block_production_counts.setdefault(store_key, {}).setdefault(run.name, {})
@@ -1395,16 +1381,12 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
 
                         for robot in robots:
                             robot_key = int(robot.name)
-                            csv_path = robot / (sel + '.csv')
+                            csv_path = robot / 'block.csv'
                             if csv_path.exists():
-                                # CSV files are space-separated, not comma-separated
-                                if csv_path.name == 'block.csv':
-                                    raw_csv = csv_path.read_text(encoding='utf-8', errors='replace')
-                                    # Replace bracketed payloads like "[x, s, z]" with 0 before parsing.
-                                    sanitized_csv = re.sub(r'\[[^\]\n]*\]', '0', raw_csv)
-                                    df = pd.read_csv(StringIO(sanitized_csv), sep=r'\s+')
-                                else:
-                                    df = pd.read_csv(csv_path, sep=r'\s+')
+                                raw_csv = csv_path.read_text(encoding='utf-8', errors='replace')
+                                # Replace bracketed payloads like "[x, s, z]" with 0 before parsing.
+                                sanitized_csv = re.sub(r'\[[^\]\n]*\]', '0', raw_csv)
+                                df = pd.read_csv(StringIO(sanitized_csv), sep=r'\s+')
                                 
                                 # Fix common column name typos
                                 if 'TELEAPSED' in df.columns:
@@ -1474,13 +1456,11 @@ def create_csv_picker_for_loaded_paths(picker, data_dir=None):
                 print(f"❌ Error loading data: {str(e)}")
                 print("Please check your experiment selection and try again.")
 
-    btn = widgets.Button(description='Load data')
-    btn.on_click(_load_data)
-    display(btn, save_btn, out)
+    display(save_btn, out)
+    _load_data()
 
     def get_selections():
-        # Return a representative csv path per experiment (first probe_dir is used)
-        return {exp_key: str(sorted(probe_dirs)[0] / (rb.value + '.csv')) if rb.value and probe_dirs else None for exp_key, (rb, _, probe_dirs) in radio_map.items()}
+        return {exp_key: str(sorted(probe_dirs)[0] / 'block.csv') if probe_dirs else None for exp_key, _, probe_dirs in exp_items}
 
     return get_selections
 
@@ -2515,10 +2495,10 @@ def _create_consensus_boxplot_visualization(
     # Color families by base consensus; experiment variants are shades of that family.
     base_names = sorted({_base_consensus_name(c) for c in consensus_types})
     fixed_base_colors = {
-        'C-PoA': '#2ca25f',
-        'C_PoA': '#2ca25f',
-        'CPoA': '#2ca25f',
-        'PoA': '#1f4fbf',
+        'C-PoA': '#d62728',
+        'C_PoA': '#d62728',
+        'CPoA': '#d62728',
+        'PoA': '#00008b',
         'R-PoA': '#4ebce0',
         'R-PoA2': '#ff8c42',
         'R_PoA2': '#ff8c42',
@@ -2579,12 +2559,23 @@ def _create_consensus_boxplot_visualization(
                 ordered_variants.append((n_agents, variant, subset[metric_column].values))
 
         if ordered_variants:
-            positions = list(range(len(ordered_variants)))
+            box_width = 0.6
+            group_gap = 0.9
+            positions = []
+            current_position = 0.0
+            previous_agents = None
+            for n_agents, variant, _ in ordered_variants:
+                if previous_agents is not None and n_agents != previous_agents:
+                    current_position += group_gap
+                positions.append(current_position)
+                current_position += box_width
+                previous_agents = n_agents
+
             box_data = [vals for _, _, vals in ordered_variants]
             bp = ax_box.boxplot(
                 box_data,
                 positions=positions,
-                widths=0.65,
+                widths=box_width,
                 patch_artist=True,
                 showfliers=False,
             )
@@ -2599,7 +2590,7 @@ def _create_consensus_boxplot_visualization(
                     point_values = point_values[np.isfinite(point_values)]
                     if point_values.size == 0:
                         continue
-                    point_x = np.full(point_values.size, pos + 0.28, dtype=np.float64)
+                    point_x = np.full(point_values.size, pos, dtype=np.float64)
                     ax_box.scatter(
                         point_x,
                         point_values,
@@ -2624,10 +2615,7 @@ def _create_consensus_boxplot_visualization(
                     outlier_values = point_values[outlier_mask]
                     if outlier_values.size == 0:
                         continue
-                    if show_data_points:
-                        outlier_x = np.full(outlier_values.size, pos + 0.28, dtype=np.float64)
-                    else:
-                        outlier_x = np.full(outlier_values.size, pos, dtype=np.float64)
+                    outlier_x = np.full(outlier_values.size, pos, dtype=np.float64)
                     ax_box.scatter(
                         outlier_x,
                         outlier_values,
@@ -2639,9 +2627,16 @@ def _create_consensus_boxplot_visualization(
                         zorder=8,
                     )
 
-            xticklabels = [f"{variant} {n_agents}" for n_agents, variant, _ in ordered_variants]
+            xticklabels = []
+            for n_agents, variant, _ in ordered_variants:
+                variant_index, _, _ = _split_consensus_variant(variant)
+                if variant_index is not None:
+                    xticklabels.append(f"{variant_index}#{n_agents}")
+                else:
+                    xticklabels.append(f"{n_agents}")
             ax_box.set_xticks(positions)
             ax_box.set_xticklabels(xticklabels, rotation=55, ha='right', fontsize=9)
+            ax_box.set_xlim(min(positions) - box_width, max(positions) + box_width)
         else:
             ax_box.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax_box.transAxes)
 
@@ -2704,7 +2699,7 @@ def _create_consensus_boxplot_visualization(
     
     if SEPARATE_EXPERIMENT_DATA and 'exp_key' in plot_df.columns:
         _add_experiment_legend(fig, list(plot_df['exp_key'].dropna().astype(str).unique()))
-        plt.tight_layout(rect=(0, 0.05, 1, 0.98))
+        plt.tight_layout(rect=(0, 0.05, 1, 0.94))
     else:
         plt.tight_layout()
     _save_plot_if_needed(
