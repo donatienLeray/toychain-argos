@@ -138,7 +138,7 @@ run() {
 # run experiment with different consensus mechanisms
 #EXP=1_random_walk
 #EXP=2_random_walk_different_speed
-EXP=3_random_walk_obstacle_trap
+EXP=3_random_walk_obstacle_trap_2
 
 # Explorer
 config "EXPLORER" "False"

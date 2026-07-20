@@ -94,7 +94,7 @@ class Contract(StateMixin):
         self.all_peers[sender_id][str(peer_id)] = self.msg.timestamp
         
         # Log the peer connection event
-        logger.info(f"Robot {sender_id} recorded peer {peer_id}")
+        #logger.info(f"Robot {sender_id} recorded peer {peer_id}")
 
         
     def get_block_reward(self, block):

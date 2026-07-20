@@ -260,11 +260,14 @@ def controlstep():
                 txdata = {'function': 'AddPeer', 'inputs': [peer.id]}
                 tx = Transaction(sender = me.id, data = txdata, timestamp = w3.custom_timer.time())
                 w3.send_transaction(tx)
+        
                 
         # Add peers on the toychain
         for enode in erb_enodes-set(w3.peers):
             try:
                 w3.add_peer(enode)
+                # log all peers
+                logger.info(f"Robot {me.id} added peer {enode_to_id(enode)} at {w3.custom_timer.time()}")
             except Exception as e:
                 raise e
             

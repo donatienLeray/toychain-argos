@@ -1211,6 +1211,97 @@ def _load_robot_speed_from_monitor_log(log_path: Path, robot_key: int) -> Option
     warnings.warn(f"No speed line found in {log_path} for robot {robot_key}", UserWarning)
     return None
 
+
+def _normalize_prefixed_experiment_key(exp_key: str) -> str:
+    """Remove optional experiment variant prefixes like `1#` from config keys."""
+    if not isinstance(exp_key, str):
+        return ''
+
+    if '/' in exp_key:
+        base, tail = exp_key.rsplit('/', 1)
+        tail = re.sub(r'^\d+#', '', tail)
+        return f"{base}/{tail}"
+
+    return re.sub(r'^\d+#', '', exp_key)
+
+
+def _is_robot_trapped_at_time(zone_df: Optional[pd.DataFrame], timestamp: float) -> bool:
+    """Return whether a robot is inside the trap at a given timestamp."""
+    if zone_df is None or not isinstance(zone_df, pd.DataFrame) or zone_df.empty:
+        return False
+    if 'TIME' not in zone_df.columns or 'EVENT' not in zone_df.columns:
+        return False
+
+    ordered = zone_df[['TIME', 'EVENT']].copy()
+    ordered['TIME'] = pd.to_numeric(ordered['TIME'], errors='coerce')
+    ordered['EVENT'] = ordered['EVENT'].astype(str).str.upper()
+    ordered = ordered[ordered['TIME'].notna() & ordered['EVENT'].isin(['ENTER', 'EXIT'])]
+    if ordered.empty:
+        return False
+
+    ordered = ordered.sort_values('TIME', kind='mergesort')
+    inside = False
+    for _, row in ordered.iterrows():
+        event_time = float(row['TIME'])
+        if event_time > float(timestamp):
+            break
+        if row['EVENT'] == 'ENTER':
+            inside = True
+        elif row['EVENT'] == 'EXIT':
+            inside = False
+    return inside
+
+
+def _load_peer_exchange_events_for_run(
+    exp_key: str,
+    rep_name: str,
+    robot_ids: List[int],
+    data_dir: Optional[Path] = None,
+) -> List[Tuple[float, int, int]]:
+    """Parse `Robot X added peer Y at T` events from run monitor logs."""
+    if data_dir is None:
+        data_dir = Path('data')
+    data_dir = Path(data_dir)
+
+    normalized_exp_key = _normalize_prefixed_experiment_key(exp_key)
+    run_path = data_dir / normalized_exp_key / str(rep_name)
+    if not run_path.exists():
+        return []
+
+    events: List[Tuple[float, int, int]] = []
+    event_re = re.compile(r'Robot\s+(?P<robot>\d+)\s+added peer\s+(?P<peer>\d+)\s+at\s+(?P<time>-?\d+(?:\.\d+)?)')
+
+    for robot_id in sorted({int(r) for r in robot_ids if str(r).isdigit() or isinstance(r, int)}):
+        log_path = run_path / str(robot_id) / 'monitor.log'
+        if not log_path.exists():
+            continue
+
+        try:
+            with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+                for line in f:
+                    match = event_re.search(line)
+                    if not match:
+                        continue
+                    actor = int(match.group('robot'))
+                    peer = int(match.group('peer'))
+                    t = float(match.group('time'))
+                    events.append((t, actor, peer))
+        except Exception as exc:
+            warnings.warn(f"Failed to parse peer exchanges from {log_path}: {exc}", UserWarning)
+
+    if not events:
+        return []
+
+    # De-duplicate mirrored log entries from both participating robots.
+    dedup: Dict[Tuple[float, int, int], Tuple[float, int, int]] = {}
+    for t, a, b in events:
+        pair = (min(a, b), max(a, b))
+        key = (float(t), pair[0], pair[1])
+        if key not in dedup:
+            dedup[key] = (float(t), pair[0], pair[1])
+
+    return sorted(dedup.values(), key=lambda x: (x[0], x[1], x[2]))
+
 def create_csv_picker_for_loaded_paths(picker, data_dir=None):
     """For each path in `picker.last_loaded` (each either `data/exp` or `data/exp/cfg`),
     find the first folder named '1' (recursively) and list CSV files found there. Show a
@@ -2445,6 +2536,13 @@ def _create_consensus_boxplot_visualization(
         print(no_data_message)
         return
 
+    # When experiment separation is disabled, merge prefixed consensus variants
+    # (for example "1#PoA" and "2#PoA") into a single consensus bucket.
+    if not bool(globals().get('SEPARATE_EXPERIMENT_DATA', True)) and 'consensus' in plot_df.columns:
+        merged_df = plot_df.copy()
+        merged_df['consensus'] = merged_df['consensus'].astype(str).str.replace(r'^\d+#\s*', '', regex=True)
+        plot_df = merged_df
+
     # Use one shared y-axis range across all consensus subplots for the same metric.
     if ylim is None:
         metric_vals = pd.to_numeric(plot_df[metric_column], errors='coerce').dropna().values
@@ -3018,11 +3116,14 @@ def show_bpa_gini_main_chain_boxplot(save_path=None, dpi=None):
 
 
 def show_vulnerability_boxplot(save_path=None, dpi=None):
-    """Boxplot of the Nakamoto coefficient per run.
+    """Boxplot of a security score per run.
 
     For each run, sum main-chain difficulty per producer, sort producers by their
     total main-chain difficulty contribution, and find the minimum number of
     producers needed to reach at least 51% of the total main-chain difficulty.
+
+    The plotted metric is:
+        security = nakamoto_coefficient / number_of_robots
     """
 
     if 'loaded_data' not in globals() or not globals().get('loaded_data'):
@@ -3128,6 +3229,7 @@ def show_vulnerability_boxplot(save_path=None, dpi=None):
             cumulative = np.cumsum(sorted_difficulty)
             threshold = 0.51 * total_difficulty
             nakamoto_coefficient = int(np.searchsorted(cumulative, threshold, side='left') + 1)
+            security_score = float(nakamoto_coefficient) / float(len(difficulty_values)) if len(difficulty_values) > 0 else np.nan
 
             rows.append({
                 'consensus': consensus,
@@ -3135,6 +3237,7 @@ def show_vulnerability_boxplot(save_path=None, dpi=None):
                 'rep': rep_name,
                 'exp_key': exp_key,
                 'nakamoto_coefficient': nakamoto_coefficient,
+                'security_score': security_score,
                 'main_chain_difficulty': total_difficulty,
                 'n_robots': int(len(difficulty_values)),
             })
@@ -3143,15 +3246,15 @@ def show_vulnerability_boxplot(save_path=None, dpi=None):
 
     _create_consensus_boxplot_visualization(
         plot_df=plot_df,
-        metric_column='nakamoto_coefficient',
-        ylabel='Nodes required for 51% of main-chain difficulty',
-        plot_title='Vulnerability (Nakamoto Coefficient)',
-        comparison_title='Vulnerability Comparison Across Consensus Algorithms',
+        metric_column='security_score',
+        ylabel='Nakamoto coefficient / robots',
+        plot_title='Security (Nakamoto Coefficient / Robots)',
+        comparison_title='Security Comparison Across Consensus Algorithms',
         ylim=None,
-        no_data_message='No vulnerability data found. Ensure runs include main-chain TDIFF and MINER data.',
+        no_data_message='No security data found. Ensure runs include main-chain TDIFF and MINER data.',
         save_path=save_path,
         dpi=dpi,
-        plot_name='vulnerability_nakamoto_coefficient',
+        plot_name='security_nakamoto_coefficient',
     )
 
 
@@ -3703,4 +3806,107 @@ def show_trap_residence_time_boxplot(save_path=None, dpi=None):
         save_path=save_path,
         dpi=dpi,
         plot_name='trap_residence_time_boxplot',
+    )
+
+
+def show_interpartition_contact_frequency_boxplot(save_path=None, dpi=None):
+    """Boxplot of inter-partition contact frequency (ICF) per run.
+
+    Groups are inferred dynamically from peer exchanges and trap membership:
+    - trapped-group: robots that exchanged while both participants were trapped,
+      and have not exchanged with a free-group robot since.
+    - free-group: robots that exchanged while both participants were outside the trap,
+      and have not exchanged with a trapped-group robot since.
+
+    The metric per run is:
+      100 * (# peer exchanges between trapped-group and free-group) / (# total peer exchanges)
+    """
+
+    loaded_data = globals().get('loaded_data', {})
+    if not loaded_data:
+        print("No loaded_data found. Load experiment data first.")
+        return
+
+    loaded_zones = globals().get('loaded_zones', {})
+    if not loaded_zones:
+        loaded_zones = _load_zones_for_loaded_data()
+
+    rows = []
+    for exp_key in sorted(loaded_data.keys()):
+        consensus, num_agents = _extract_config_info(exp_key)
+        if consensus is None or num_agents is None:
+            print(f"Skipping {exp_key}: doesn't match consensus_number pattern")
+            continue
+
+        for rep_name, robots_dict in loaded_data.get(exp_key, {}).items():
+            if not isinstance(robots_dict, dict) or not robots_dict:
+                continue
+
+            robot_ids = sorted({int(robot_id) for robot_id in robots_dict.keys()})
+            if not robot_ids:
+                continue
+
+            run_zone_dict = loaded_zones.get(exp_key, {}).get(rep_name, {}) if isinstance(loaded_zones, dict) else {}
+            peer_events = _load_peer_exchange_events_for_run(exp_key, rep_name, robot_ids, data_dir=Path('data'))
+            if not peer_events:
+                continue
+
+            group_state: Dict[int, Optional[str]] = {robot_id: None for robot_id in robot_ids}
+            inter_partition_contacts = 0
+            total_contacts = 0
+
+            for timestamp, robot_a, robot_b in peer_events:
+                state_a = group_state.get(robot_a)
+                state_b = group_state.get(robot_b)
+
+                is_cross_group = (
+                    (state_a == 'trapped' and state_b == 'free')
+                    or (state_a == 'free' and state_b == 'trapped')
+                )
+                if is_cross_group:
+                    inter_partition_contacts += 1
+                    # Cross-group contact invalidates both membership predicates.
+                    group_state[robot_a] = None
+                    group_state[robot_b] = None
+
+                zone_a = run_zone_dict.get(robot_a)
+                zone_b = run_zone_dict.get(robot_b)
+                robot_a_trapped = _is_robot_trapped_at_time(zone_a, timestamp)
+                robot_b_trapped = _is_robot_trapped_at_time(zone_b, timestamp)
+
+                if robot_a_trapped and robot_b_trapped:
+                    group_state[robot_a] = 'trapped'
+                    group_state[robot_b] = 'trapped'
+                elif (not robot_a_trapped) and (not robot_b_trapped):
+                    group_state[robot_a] = 'free'
+                    group_state[robot_b] = 'free'
+
+                total_contacts += 1
+
+            if total_contacts == 0:
+                continue
+
+            rows.append({
+                'consensus': consensus,
+                'num_agents': num_agents,
+                'rep': rep_name,
+                'exp_key': exp_key,
+                'inter_partition_contacts': int(inter_partition_contacts),
+                'total_contacts': int(total_contacts),
+                'inter_partition_contact_pct': (float(inter_partition_contacts) / float(total_contacts)) * 100.0,
+            })
+
+    plot_df = pd.DataFrame(rows)
+
+    _create_consensus_boxplot_visualization(
+        plot_df=plot_df,
+        metric_column='inter_partition_contact_pct',
+        ylabel='Inter-partition contact frequency (%)',
+        plot_title='Inter-partition Contact Frequency (ICF)',
+        comparison_title='Inter-partition Contact Frequency Comparison Across Consensus Algorithms',
+        ylim=(0, 100),
+        no_data_message='No peer-contact data found. Ensure monitor.log contains "Robot X added peer Y at T" lines.',
+        save_path=save_path,
+        dpi=dpi,
+        plot_name='interpartition_contact_frequency_boxplot',
     )
