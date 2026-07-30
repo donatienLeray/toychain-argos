@@ -106,7 +106,7 @@ params['scs'] = dict()
 params['scs']['files'] = str(os.environ["SCNAME"])
 params['scs']['trans_reward'] = 1
 params['scs']['decay'] = 50
-params['scs']['update'] = "peer_index"
+params['scs']['update'] = "no_update"
 params['scs']['recursion'] = 1
 
 # debug parameters

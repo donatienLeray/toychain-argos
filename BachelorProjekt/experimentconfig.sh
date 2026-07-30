@@ -23,15 +23,11 @@ export GENESISFILE="${DOCKERFOLDER}/geth/files/$GENESISNAME.json"
 
 
 # [ARGOS]
-export ARGOSNAME=obstacle
+export ARGOSNAME=foraging
 export ARGOSFILE="${EXPERIMENTFOLDER}/experiments/${ARGOSNAME}.argos"
 export ARGOSTEMPLATE="${EXPERIMENTFOLDER}/experiments/${ARGOSNAME}.x.argos"
-
-#export NUM1=15
 export CON1="${EXPERIMENTFOLDER}/controllers/main.py"
 
-#export NUM2=0
-#export CON2="${EXPERIMENTFOLDER}/controllers/main_greedy.py"
 
 export RABRANGE="0.5"
 export WHEELNOISE="0"
@@ -43,7 +39,7 @@ export SPEEDUNIFORM=True
 
 
 #export NUMROBOTS=$(echo $NUM1+$NUM2 | bc)
-export NUMROBOTS=25
+export NUMROBOTS=5
 #export ARENADIM=$(echo "scale=3 ; sqrt($NUMROBOTS/$DENSITY)" | bc)
 #export ARENADIMH=$(echo "scale=3 ; $ARENADIM/2" | bc)
 # experiment 3 obstacle
@@ -91,7 +87,7 @@ export REP_SEED=True
 export TIMELIMIT=100
 export LENGTH=400
 export SLEEPTIME=5
-export REPS=10
+export REPS=20
 export NOTES="just a test"
 
 

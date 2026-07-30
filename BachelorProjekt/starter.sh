@@ -17,6 +17,19 @@ if [[ $1 == "--help" || $1 == "-h" ]]; then
 fi
 source experimentconfig.sh
 
+generate_floor() {
+    local floor_dir="$EXPERIMENTFOLDER/experiments/floors"
+    local python_bin="${MAINFOLDER}/.venv-1/bin/python"
+
+    if [ ! -x "$python_bin" ]; then
+        python_bin="python3"
+    fi
+
+    echo "+-----------------------------------------------------------+"
+    echo "Generating floor image for ARGOSNAME=$ARGOSNAME"
+    ( cd "$floor_dir" && ARGOSNAME="$ARGOSNAME" "$python_bin" generate_floor.py )
+}
+
 cleanup_stale_argos_ports() {
     local base_port=1234
     local robot_count="${NUMROBOTS:-0}"
@@ -56,6 +69,8 @@ echo "MAINFOLDER IS $MAINFOLDER"
 
 echo "+-----------------------------------------------------------+"
 echo "Updating the ARGoS XML file"
+
+generate_floor
 
 envsubst < $ARGOSTEMPLATE > $ARGOSFILE
 

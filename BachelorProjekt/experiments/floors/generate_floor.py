@@ -7,13 +7,17 @@ pattern as .png image and as .csv file.
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle, Circle
+from matplotlib.patches import Rectangle, Circle, Polygon
 import os
-from math import sqrt
 from random import uniform
-import os
-arena_size = os.environ["ARENADIM"]
-print(arena_size)
+arena_size = os.environ.get("ARENADIM")
+if arena_size is None:
+    print("ARENADIM is not set; generating the floor with the default canvas size")
+else:
+    print(arena_size)
+
+argos_name = os.environ.get("ARGOSNAME", "").strip().lower()
+print(f"ARGOSNAME={argos_name or 'unset'}")
 
 np.random.seed(seed=1)
 
@@ -78,10 +82,10 @@ def create_shuffled_matrix(tiles_per_side):
     print("Saving CSV layout file to " + csv_name)
     
 
-def create_market_resources(market_percent_size, number_resources, quality_range):  
-
+def prepare_canvas():
     cm = 1/2.54
     fig, ax = plt.subplots(figsize=(10*cm, 10*cm))
+    ax.set_facecolor('white')
     plt.xticks([])
     plt.yticks([])
     plt.gca().set_axis_off()
@@ -89,19 +93,81 @@ def create_market_resources(market_percent_size, number_resources, quality_range
     plt.gca().yaxis.set_major_locator(plt.NullLocator())
     plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
     plt.margins(0,0)
-    # ax.add_patch(Rectangle((0.5-market_percent_size/2, 0.5-market_percent_size/2), market_percent_size, market_percent_size, color="yellow"))
-    # f = open('resources.txt', 'w+')
-    # for i in range(0,number_resources):
-    #     circle_quality = round(uniform(quality_range[0],quality_range[1]), 2)
-    #     circle_center = (uniform(0,1), uniform(0,1))
-    #     ax.add_patch(Circle(circle_center, circle_quality, color="red"))
-    #     f.write(' '.join([str(round(x,2)) for x in circle_center])+ ' ' + str(round(circle_quality,2))+'\n')
-    
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect('equal', adjustable='box')
+    # make axes fill the full figure (no margins) so coordinates map to image corners
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    ax.set_position([0, 0, 1, 1])
+    return fig, ax
 
-    # Save as png
-    img_name = "market" + ".png"
+
+def _env_float(name, default):
+    value = os.environ.get(name, "")
+    return default if value == "" else float(value)
+
+
+def save_floor(fig, img_name="floor.png", trim=False, dpi=200):
     print("Saving image to " + img_name)
-    plt.savefig(img_name, bbox_inches = 'tight')
+    # save exactly the figure canvas without tight cropping or extra padding
+    fig.savefig(img_name, dpi=dpi, bbox_inches=None, pad_inches=0)
+    if trim:
+        os.system('convert ' + img_name + ' -trim ' + img_name)
+
+
+def draw_obstacle_triangle(ax):
+    arena_dim = _env_float("ARENADIM", 1.0)
+    zone_size = _env_float("ZONE_SIZE", 0.5)
+    zone_ratio = min(max(zone_size / arena_dim, 0.05), 0.95)
+
+    triangle = Polygon(
+        [(1.05, 1.05), (1.0 - zone_ratio, 1.0), (1.0, 1.0 - zone_ratio)],
+        closed=True,
+        facecolor="#f3d36b",
+        edgecolor="#d1b23f",
+        linewidth=2,
+        alpha=0.95,
+    )
+    ax.add_patch(triangle)
+
+
+def create_blank_floor():
+    fig, _ = prepare_canvas()
+    save_floor(fig, trim=False)
+
+
+def create_obstacle_floor():
+    fig, ax = prepare_canvas()
+    draw_obstacle_triangle(ax)
+    save_floor(fig, trim=False)
+
+
+def create_market_resources(market_percent_size, number_resources, quality_range):  
+
+    fig, ax = prepare_canvas()
+    ax.add_patch(Rectangle((0.5-market_percent_size/2, 0.5-market_percent_size/2), market_percent_size, market_percent_size, color="#f3d36b", alpha=0.95))
+
+    def sample_resource_center(radius):
+        # Keep resource patches away from the top-right home area.
+        while True:
+            circle_center = (uniform(0.18, 0.70), uniform(0.18, 0.70))
+            if circle_center[0] + radius < 0.80 and circle_center[1] + radius < 0.80:
+                return circle_center
+
+    f = open('resources.txt', 'w+')
+    for i in range(0,number_resources):
+        circle_quality = round(uniform(quality_range[0],quality_range[1]), 2)
+        circle_center = sample_resource_center(circle_quality)
+        ax.add_patch(Circle(circle_center, circle_quality, color="#d64545", alpha=0.95))
+        f.write(' '.join([str(round(x,2)) for x in circle_center])+ ' ' + str(round(circle_quality,2))+'\n')
+    f.close()
+
+    # Draw the nest/home marker in the top-right corner for foraging runs.
+    nest_center = (0.87, 0.87)
+    ax.add_patch(Circle(nest_center, 0.12, color="#f5dc64", alpha=0.95))
+    ax.add_patch(Circle(nest_center, 0.08, color="#fff1b0", alpha=0.95))
+
+    save_floor(fig)
 
 
 def main_shuffled_matrix():
@@ -112,7 +178,19 @@ def main_shuffled_matrix():
 def main_market():
     create_market_resources(0.2,5,[0.02,0.1])
 
+
+def main():
+    if argos_name == "greeter":
+        create_blank_floor()
+    elif argos_name == "obstacle":
+        create_obstacle_floor()
+    elif argos_name == "foraging":
+        create_market_resources(0.2, 5, [0.02, 0.1])
+    else:
+        print("Unknown ARGOSNAME, generating blank floor")
+        create_blank_floor()
+
 if __name__ == "__main__":
     # main_shuffled_matrix()
-    main_market()
+    main()
 

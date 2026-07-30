@@ -133,19 +133,17 @@ run() {
 	fi
 }
 
-
 ####################################################################
 # run experiment with different consensus mechanisms
-#EXP=1_random_walk
-#EXP=2_random_walk_different_speed
-EXP=3_random_walk_obstacle_trap_2
+EXP=test
+CFG=test
 
 # Explorer
 config "EXPLORER" "False"
 
 # standard values
 config "TPS" 10
-config "REPS" 10
+config "REPS" 20
 config "LENGTH" 400
 config "REP_SEED" "True"
 loopconfig "debug" "main" "False"
@@ -154,9 +152,45 @@ loopconfig "debug" "scs" "True"
 config "AGENTSPEED" 18
 # set to to false for experiment 2_random_walk_different_speed
 config "SPEEDUNIFORM" "True"
-# option for experiment 3_random_walk_obstacle_trap
-config ARGOSNAME "obstacle"
+# set to obstacle for experiment 3_random_walk_obstacle_trap else set to greeter
+config ARGOSNAME "foraging" #greeter|obstacle|foraging
+# set the cotroller to main_foraging.py for experiment 4_foragingelse set to main
+config CON1 "${EXPERIMENTFOLDER}/controllers/main_foraging.py" #main|main_foraging.py
+config "CONSENSUS" "ProofOfConnection"
+loopconfig "scs" "update" "\"no_update\""
+loopconfig "scs" "decay" 50
 
+# set number of robots
+config "NUMROBOTS" 5
+# run experiment
+wait
+run "${EXP}/${CFG}" $@
+
+
+####################################################################
+# run experiment with different consensus mechanisms
+#EXP=1_random_walk
+#EXP=2_random_walk_different_speed
+EXP=3_random_walk_obstacle_trap
+
+# Explorer
+config "EXPLORER" "False"
+
+# standard values
+config "TPS" 10
+config "REPS" 20
+config "LENGTH" 400
+config "REP_SEED" "True"
+loopconfig "debug" "main" "False"
+loopconfig "debug" "loop" "True"
+loopconfig "debug" "scs" "True"
+config "AGENTSPEED" 18
+# set to to false for experiment 2_random_walk_different_speed
+config "SPEEDUNIFORM" "True"
+# set to obstacle for experiment 3_random_walk_obstacle_trap else set to greeter
+config ARGOSNAME "obstacle" #greeter|obstacle|foraging
+# set the cotroller to main_foraging.py for experiment 4_foragingelse set to main
+config CON1 "${EXPERIMENTFOLDER}/controllers/main.py" #main|main_foraging.py
 
 
 ##########
