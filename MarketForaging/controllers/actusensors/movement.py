@@ -226,16 +226,27 @@ class Navigate(object):
         # Vectorial obstacle avoidance parameters
         self.Ki = 0.1
 
+    def _coerce_target(self, target):
+
+        if hasattr(target, 'x') and hasattr(target, 'y') and not isinstance(target, (list, tuple)):
+            return Vector2D(target.x, target.y)
+
+        if isinstance(target, (list, tuple)) and len(target) >= 2:
+            x = target[0].x if hasattr(target[0], 'x') and hasattr(target[0], 'y') else target[0]
+            y = target[1].y if hasattr(target[1], 'x') and hasattr(target[1], 'y') else target[1]
+            return Vector2D(x, y)
+
+        return Vector2D(target)
+
     def update_state(self, target = [0,0]):
 
         if self.sensor[0:3] == 'odo':
             self.position    = self.robot.odo.getPosition()
             self.orientation = self.robot.odo.getOrientation()
-            self.target      = Vector2D(target)
         else:
             self.position    = Vector2D(self.robot.position.get_position()[0:2])
             self.orientation = self.robot.position.get_orientation()
-            self.target      = Vector2D(target)
+        self.target = self._coerce_target(target)
 
 
     def navigate(self, target = [0,0]):

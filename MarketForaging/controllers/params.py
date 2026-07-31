@@ -41,9 +41,9 @@ params['buy_duration']   = 30
 params['explore_mu']     = float(os.environ["ARENADIM"])/params['scout_speed']*160
 params['explore_sg']     = 5
 
-params['gsFreq']     = 20
-params['erbtFreq']   = 10
-params['erbDist']    = 0.1
+#params['gsFreq']     = 20
+#params['erbtFreq']   = 10
+#params['erbDist']    = 0.1
 
 # Maximum quantity of resource a robot can transport
 params['max_Q']       = 10

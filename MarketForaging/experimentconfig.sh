@@ -17,8 +17,8 @@ export SCFILE="${EXPERIMENTFOLDER}/scs/${SCNAME}.py"
 
 # [ARGOS]
 export NUMA=5
-export NUMB=5
-export NUMC=5
+export NUMB=0
+export NUMC=0
 export NUMD=0
 export NUMAB=$(echo $NUMA+$NUMB| bc)
 export NUMABC=$(echo $NUMA+$NUMB+$NUMC| bc)
@@ -67,7 +67,7 @@ export WINSIZE=5
 # [OTHER]
 export SEED=1500
 export TIMELIMIT=100
-export LENGTH=100
+export LENGTH=5000
 export SLEEPTIME=5
 export REPS=5
 export NOTES="Variation of utility of the resource between 100 and 400"

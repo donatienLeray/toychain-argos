@@ -12,16 +12,16 @@ sys.path += [os.environ['EXPERIMENTFOLDER']+'/controllers', \
              os.environ['EXPERIMENTFOLDER']+'/loop_functions', \
              os.environ['EXPERIMENTFOLDER']]
 
-from movement import RandomWalk, Navigate, Odometry
-from groundsensor import GroundSensor, ResourceVirtualSensor, Resource
-from erandb import ERANDB
-from rgbleds import RGBLEDs
-from console import *
-from aux import *
-from statemachine import *
+from controllers.actusensors.movement import RandomWalk, Navigate, Odometry
+from controllers.actusensors.groundsensor import GroundSensor, ResourceVirtualSensor, Resource
+from controllers.actusensors.erandb import ERANDB
+from controllers.actusensors.rgbleds import RGBLEDs
+from controllers.utils import *
+from controllers.utils import Timer
+from controllers.utils import FiniteStateMachine
 
-from loop_params import params as lp
-from control_params import params as cp
+from controllers.params import params as cp
+from loop_functions.params import params as lp
 
 # /* Logging Levels for Console and File */
 #######################################################################
@@ -30,6 +30,8 @@ logtofile = False
 
 # /* Global Variables */
 #######################################################################
+global robot
+
 global startFlag, geth_peer_count
 startFlag = False
 

@@ -33,7 +33,7 @@
       <!-- No required configuration -->
       
       <!-- Optionally, you can pass a script as a controller parameter: -->
-      <params script="/home/dodo/toychain-argos/BachelorProjekt/controllers/main.py"
+      <params script="/home/dodo/toychain-argos/BachelorProjekt/controllers/main_foraging.py"
       timeRate="1" />
     </python_controller>
     <!--- copy paste here for second controller -->

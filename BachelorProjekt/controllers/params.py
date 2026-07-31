@@ -29,3 +29,6 @@ params['explore_sg']     = 2
 params['gsFreq']     = 20
 params['erbtFreq']   = 10
 params['erbDist']    = 175
+
+params['error']      = 0.025
+params['max_Q']       = 10

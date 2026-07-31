@@ -5,7 +5,7 @@
 import random, math
 import sys, os
 import hashlib
-from json import loads
+from ast import literal_eval
 
 mainFolder = os.environ['MAINFOLDER']
 experimentFolder = os.environ['EXPERIMENTFOLDER']
@@ -34,6 +34,16 @@ cache    = Resource({"x":lp['cache']['x'], "y":lp['cache']['y'], "radius": lp['c
 #######################################################################
 global robot, environment
 
+def parse_robot_attr(attr_name, default):
+	raw_value = robot.variables.get_attribute(attr_name)
+	if not raw_value:
+		return default
+
+	try:
+		return literal_eval(raw_value)
+	except (ValueError, SyntaxError):
+		return default
+
 def draw_market():
 	environment.qt_draw.circle([market.x, market.y, 0.001],[], market.radius, 'custom2', True)
 	environment.qt_draw.circle([cache.x, cache.y, 0.001],[], cache.radius, 'custom2', False)
@@ -48,7 +58,7 @@ def draw_patches():
 		environment.qt_draw.circle([res.x, res.y, 0.001],[], res.radius*(res.quantity/lp['patches']['qtty_max'][res.quality]), res.quality, True)
 		environment.qt_draw.circle([res.x, res.y, 0.0005],[], res.radius, 'gray90', True)
 	
-	resources = eval(robot.variables.get_attribute("verified"))
+	resources = parse_robot_attr("verified", [])
 	for res in resources:
 		x    = res[0]
 		y    = res[1]
@@ -56,7 +66,7 @@ def draw_patches():
 		environment.qt_draw.circle([x, y, 0.0003],[], lp['patches']['radii'][json['quality']]+0.03, json['quality'], False)
 		environment.qt_draw.circle([x, y, 0.00025],[], lp['patches']['radii'][json['quality']]+0.03, 'black', True)
 
-	resources = eval(robot.variables.get_attribute("pending"))
+	resources = parse_robot_attr("pending", [])
 	for res in resources:
 		x    = res[0]
 		y    = res[1]
@@ -64,7 +74,7 @@ def draw_patches():
 		environment.qt_draw.circle([x, y, 0.0003],[], lp['patches']['radii'][json['quality']]+0.03, json['quality'], False)
 		environment.qt_draw.circle([x, y, 0.00025],[], lp['patches']['radii'][json['quality']]+0.03, 'gray90', True)
 
-	resources = eval(robot.variables.get_attribute("allpts"))
+	resources = parse_robot_attr("allpts", [])
 	for res in resources:
 		all_x = res[0]
 		all_y = res[1]
@@ -76,7 +86,7 @@ def draw_patches():
 
 
 def draw_resources_on_robots():
-	quantity = int(robot.variables.get_attribute("quantity"))
+	quantity = int(robot.variables.get_attribute("quantity") if robot.variables.get_attribute("quantity") else 0)
 	quality  = robot.variables.get_attribute("hasResource")
 
 	# Draw carried quantity
@@ -130,7 +140,8 @@ def draw_in_robot():
 	color_state = hash_to_rgb(robot.variables.get_attribute("state_hash"))
 	color_block = hash_to_rgb(robot.variables.get_attribute("block_hash"))
 	color_mempl = hash_to_rgb(robot.variables.get_attribute("mempl_hash"))
-	tx_count = int(robot.variables.get_attribute("mempl_size"))
+ 
+	tx_count = int(robot.variables.get_attribute("mempl_size") if robot.variables.get_attribute("mempl_size") else 0)
 	# environment.qt_draw.circle([0,0,0.010], [], 0.100, color_state, True)
 	environment.qt_draw.circle([0,0,0.011], [], 0.09, color_block, True)
 	# environment.qt_draw.cylinder([1.5*rob_diam, 0, 0.005], [], 0.5*rob_diam, tx_count*res_height, color_mempl)
@@ -138,12 +149,12 @@ def draw_in_robot():
 
 
 	# Draw rays to w3 peers
-	w3_peers = eval(robot.variables.get_attribute("w3_peers"))
+	w3_peers = parse_robot_attr("w3_peers", [])
 	for peer_rb in w3_peers:
 		environment.qt_draw.ray([0, 0 , 0.01],[peer_rb[0]*math.cos(peer_rb[1]), peer_rb[0]*math.sin(peer_rb[1]) , 0.01], 'red', 0.15)
 
-	# Draw the odometry position error
-	odo_pos = Vector2D(eval(robot.variables.get_attribute("odo_position")))
+	# Draw the Statesodometry position error
+	odo_pos = Vector2D(parse_robot_attr("odo_position", [0, 0]))
 	gps_pos = Vector2D(robot.position.get_position()[0:2])
 	environment.qt_draw.circle(list(gps_pos-odo_pos)+[0.01],[], 0.025, hash_to_rgb(robot_type), True)
 	environment.qt_draw.ray([0,0,0.01], list(gps_pos-odo_pos)+[0.01], hash_to_rgb(robot_type), 0.5)

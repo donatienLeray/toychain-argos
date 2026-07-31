@@ -140,34 +140,31 @@ def create_obstacle_floor():
     fig, ax = prepare_canvas()
     draw_obstacle_triangle(ax)
     save_floor(fig, trim=False)
-
-
+    
 def create_market_resources(market_percent_size, number_resources, quality_range):  
 
-    fig, ax = prepare_canvas()
-    ax.add_patch(Rectangle((0.5-market_percent_size/2, 0.5-market_percent_size/2), market_percent_size, market_percent_size, color="#f3d36b", alpha=0.95))
+    cm = 1/2.54
+    fig, ax = plt.subplots(figsize=(10*cm, 10*cm))
+    plt.xticks([])
+    plt.yticks([])
+    plt.gca().set_axis_off()
+    plt.gca().xaxis.set_major_locator(plt.NullLocator())
+    plt.gca().yaxis.set_major_locator(plt.NullLocator())
+    plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
+    plt.margins(0,0)
+    # ax.add_patch(Rectangle((0.5-market_percent_size/2, 0.5-market_percent_size/2), market_percent_size, market_percent_size, color="yellow"))
+    # f = open('resources.txt', 'w+')
+    # for i in range(0,number_resources):
+    #     circle_quality = round(uniform(quality_range[0],quality_range[1]), 2)
+    #     circle_center = (uniform(0,1), uniform(0,1))
+    #     ax.add_patch(Circle(circle_center, circle_quality, color="red"))
+    #     f.write(' '.join([str(round(x,2)) for x in circle_center])+ ' ' + str(round(circle_quality,2))+'\n')
+    
 
-    def sample_resource_center(radius):
-        # Keep resource patches away from the top-right home area.
-        while True:
-            circle_center = (uniform(0.18, 0.70), uniform(0.18, 0.70))
-            if circle_center[0] + radius < 0.80 and circle_center[1] + radius < 0.80:
-                return circle_center
-
-    f = open('resources.txt', 'w+')
-    for i in range(0,number_resources):
-        circle_quality = round(uniform(quality_range[0],quality_range[1]), 2)
-        circle_center = sample_resource_center(circle_quality)
-        ax.add_patch(Circle(circle_center, circle_quality, color="#d64545", alpha=0.95))
-        f.write(' '.join([str(round(x,2)) for x in circle_center])+ ' ' + str(round(circle_quality,2))+'\n')
-    f.close()
-
-    # Draw the nest/home marker in the top-right corner for foraging runs.
-    nest_center = (0.87, 0.87)
-    ax.add_patch(Circle(nest_center, 0.12, color="#f5dc64", alpha=0.95))
-    ax.add_patch(Circle(nest_center, 0.08, color="#fff1b0", alpha=0.95))
-
-    save_floor(fig)
+    # Save as png
+    img_name = "market" + ".png"
+    print("Saving image to " + img_name)
+    plt.savefig(img_name, bbox_inches = 'tight')
 
 
 def main_shuffled_matrix():
@@ -179,13 +176,16 @@ def main_market():
     create_market_resources(0.2,5,[0.02,0.1])
 
 
+def main_shuffled_matrix():
+    for tiles_per_side in tiles_per_side_list:
+        create_shuffled_matrix(tiles_per_side)
+
+
 def main():
-    if argos_name == "greeter":
+    if argos_name == "greeter" or argos_name == "foraging":
         create_blank_floor()
     elif argos_name == "obstacle":
         create_obstacle_floor()
-    elif argos_name == "foraging":
-        create_market_resources(0.2, 5, [0.02, 0.1])
     else:
         print("Unknown ARGOSNAME, generating blank floor")
         create_blank_floor()

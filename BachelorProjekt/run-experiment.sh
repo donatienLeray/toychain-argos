@@ -155,8 +155,8 @@ config "SPEEDUNIFORM" "True"
 # set to obstacle for experiment 3_random_walk_obstacle_trap else set to greeter
 config ARGOSNAME "foraging" #greeter|obstacle|foraging
 # set the cotroller to main_foraging.py for experiment 4_foragingelse set to main
-config CON1 "${EXPERIMENTFOLDER}/controllers/main_foraging.py" #main|main_foraging.py
-config "CONSENSUS" "ProofOfConnection"
+config "CTRL" "main_foraging.py" #main|main_foraging.py
+config "CONSENSUS" "ProofOfAuthority"
 loopconfig "scs" "update" "\"no_update\""
 loopconfig "scs" "decay" 50
 

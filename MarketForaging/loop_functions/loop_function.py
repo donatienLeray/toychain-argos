@@ -199,7 +199,7 @@ def init():
     # Init robot parameters
     for robot in allrobots:
 
-        robot.id = int(robot.variables.get_attribute("id"))
+        robot.id = int(robot.variables.get_attribute("id") if robot.variables.get_attribute("id") else 0)
         robot.variables.set_attribute("eff", str(lp['economy']['efficiency_best']+robot.id*lp['economy']['efficiency_step']))
         
     # Init logfiles for loop function

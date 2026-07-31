@@ -7,7 +7,7 @@ export EXPERIMENTFOLDER="$MAINFOLDER/BachelorProjekt"
 # [[ ":$PATH:" != *":$MAINFOLDER/scripts:"* ]] && export PATH=$PATH:$MAINFOLDER/scripts
 
 # [SC]
-export CONSENSUS=ProofOfConnection
+export CONSENSUS=ProofOfAuthority
 case "$CONSENSUS" in
 	"ProofOfAuthority")  export SCNAME="poa_w" ;;
 	"ProofOfConnection") export SCNAME="poc" ;;
@@ -26,7 +26,8 @@ export GENESISFILE="${DOCKERFOLDER}/geth/files/$GENESISNAME.json"
 export ARGOSNAME=foraging
 export ARGOSFILE="${EXPERIMENTFOLDER}/experiments/${ARGOSNAME}.argos"
 export ARGOSTEMPLATE="${EXPERIMENTFOLDER}/experiments/${ARGOSNAME}.x.argos"
-export CON1="${EXPERIMENTFOLDER}/controllers/main.py"
+export CTRL=main_foraging.py
+export CON1="${EXPERIMENTFOLDER}/controllers/${CTRL}"
 
 
 export RABRANGE="0.5"

@@ -34,7 +34,7 @@ if 'consensus' in lp and 'module' in lp['consensus']:
     BLOCK_PERIOD = getattr(module, "BLOCK_PERIOD")
 else: # default
     from toychain.src.consensus.ProofOfAuthority import ProofOfAuthority as ConsensusClass, BLOCK_PERIOD 
-    warnings.showwarning(f"No consensus module specified in loop_function params, defaulting to ProofOfAuthority")   
+    warnings.warn(f"No consensus module specified in loop_function params, defaulting to ProofOfAuthority")   
 # same as choosisng:
 #from toychain.src.consensus.ProofOfConnection import ProofOfConnection , BLOCK_PERIOD
 #from toychain.src.consensus.ProofOfAuth import ProofOfAuthority , BLOCK_PERIOD
@@ -74,9 +74,13 @@ txList, tripList, submodules = [], [], []
 global clocks, counters, logs, txs
 clocks, counters, logs, txs = dict(), dict(), dict(), dict()
 
-global zoneInside, zoneBounds
-zoneInside = None
-zoneBounds = dict()
+global argos_name
+argos_name = os.environ.get("ARGOSNAME", "").strip().lower()
+
+if argos_name == "obstacle":
+    global zoneInside, zoneBounds
+    zoneInside = None
+    zoneBounds = dict()
 
 # intalise Genesis Block
 #######################################################################
@@ -190,32 +194,34 @@ def init():
     robot.log.info('Initialising gps...')
     gps = GPS(robot)
 
-    arena_dim = lp['generic'].get('arena_dim', lp['generic'].get('arena_size'))
-    zone_size = float(lp['generic'].get('zone_size', 0.5))
-    arena_half = float(arena_dim) / 2.0
-    zoneBounds = {
-        'size': zone_size,
-        'ax': arena_half,
-        'ay': arena_half,
-        'bx': max(-arena_half, arena_half - zone_size),
-        'by': arena_half,
-        'cx': arena_half,
-        'cy': max(-arena_half, arena_half - zone_size),
-        'xmin': max(-arena_half, arena_half - zone_size),
-        'xmax': arena_half,
-        'ymin': max(-arena_half, arena_half - zone_size),
-        'ymax': arena_half,
-    }
+    # zone for trapped agents only use when obstacle floor is used
+    if argos_name == "obstacle":
+        arena_dim = lp['generic'].get('arena_dim', lp['generic'].get('arena_size'))
+        zone_size = float(lp['generic'].get('zone_size', 0.5))
+        arena_half = float(arena_dim) / 2.0
+        zoneBounds = {
+            'size': zone_size,
+            'ax': arena_half,
+            'ay': arena_half,
+            'bx': max(-arena_half, arena_half - zone_size),
+            'by': arena_half,
+            'cx': arena_half,
+            'cy': max(-arena_half, arena_half - zone_size),
+            'xmin': max(-arena_half, arena_half - zone_size),
+            'xmax': arena_half,
+            'ymin': max(-arena_half, arena_half - zone_size),
+            'ymax': arena_half,
+        }
 
-    robot.variables.set_attribute("in_zone", "0")
-    robot.variables.set_attribute("zone_event", "NONE")
+        robot.variables.set_attribute("in_zone", "0")
+        robot.variables.set_attribute("zone_event", "NONE")
 
-    logs['zone'] = Logger(
-        f"{log_folder}zone.csv",
-        ['EVENT', 'X', 'Y', 'XMIN', 'XMAX', 'YMIN', 'YMAX'],
-        ID=robotID,
-    )
-    zoneInside = None
+        logs['zone'] = Logger(
+            f"{log_folder}zone.csv",
+            ['EVENT', 'X', 'Y', 'XMIN', 'XMAX', 'YMIN', 'YMAX'],
+            ID=robotID,
+        )
+        zoneInside = None
 
     # /* Init LEDs */
     rgb = RGBLEDs(robot)
@@ -303,6 +309,10 @@ def controlstep():
 
         for clock in clocks.values():
             clock.reset()
+            
+        # Register to Smart Contract transaction
+        tx = Transaction(sender = me.id, data = {'function': 'register', 'inputs': []})
+        w3.send_transaction(tx)
 
     else:
 
@@ -329,22 +339,36 @@ def controlstep():
         if clocks['peering'].query():
             peering()
 
-        # Log when the robot enters or exits the configured top-right square.
-        try:
-            position = gps.getPosition()
-            current_inside = (
-                zoneBounds['xmin'] <= position.x <= zoneBounds['xmax'] and
-                zoneBounds['ymin'] <= position.y <= zoneBounds['ymax'] and
-                position.x + position.y >= (zoneBounds['ax'] + zoneBounds['ay']) - zoneBounds['size']
-            )
+        # Log when the robot enters and exit the trapped zone (only for obstacle floor)
+        if argos_name == "obstacle":
+            try:
+                position = gps.getPosition()
+                current_inside = (
+                    zoneBounds['xmin'] <= position.x <= zoneBounds['xmax'] and
+                    zoneBounds['ymin'] <= position.y <= zoneBounds['ymax'] and
+                    position.x + position.y >= (zoneBounds['ax'] + zoneBounds['ay']) - zoneBounds['size']
+                )
 
-            if zoneInside is None:
-                zoneInside = current_inside
-                if current_inside:
-                    robot.variables.set_attribute("zone_event", "ENTER")
+                if zoneInside is None:
+                    zoneInside = current_inside
+                    if current_inside:
+                        robot.variables.set_attribute("zone_event", "ENTER")
+                        if logs.get('zone'):
+                            logs['zone'].log([
+                                'ENTER',
+                                round(position.x, 3),
+                                round(position.y, 3),
+                                round(zoneBounds['xmin'], 3),
+                                round(zoneBounds['xmax'], 3),
+                                round(zoneBounds['ymin'], 3),
+                                round(zoneBounds['ymax'], 3),
+                            ])
+                elif current_inside != zoneInside:
+                    event = 'ENTER' if current_inside else 'EXIT'
+                    robot.variables.set_attribute("zone_event", event)
                     if logs.get('zone'):
                         logs['zone'].log([
-                            'ENTER',
+                            event,
                             round(position.x, 3),
                             round(position.y, 3),
                             round(zoneBounds['xmin'], 3),
@@ -352,23 +376,10 @@ def controlstep():
                             round(zoneBounds['ymin'], 3),
                             round(zoneBounds['ymax'], 3),
                         ])
-            elif current_inside != zoneInside:
-                event = 'ENTER' if current_inside else 'EXIT'
-                robot.variables.set_attribute("zone_event", event)
-                if logs.get('zone'):
-                    logs['zone'].log([
-                        event,
-                        round(position.x, 3),
-                        round(position.y, 3),
-                        round(zoneBounds['xmin'], 3),
-                        round(zoneBounds['xmax'], 3),
-                        round(zoneBounds['ymin'], 3),
-                        round(zoneBounds['ymax'], 3),
-                    ])
-                zoneInside = current_inside
-            robot.variables.set_attribute("in_zone", "1" if current_inside else "0")
-        except Exception as e:
-            robot.log.exception(f"Failed to log zone transition for robot {robotID}: {e}")
+                    zoneInside = current_inside
+                robot.variables.set_attribute("in_zone", "1" if current_inside else "0")
+            except Exception as e:
+                robot.log.exception(f"Failed to log zone transition for robot {robotID}: {e}")
 
         # Update blockchain state on the robot C++ object
         last_block = w3.get_block('last')
@@ -528,16 +539,18 @@ def destroy():
         robot.log.exception(f"Failed while iterating chain for robot {robotID}: {e}")
     finally:
         # Ensure logs are flushed and closed
-        try:
-            if logs.get('zone'):
-                logs['zone'].file.flush()
-                try:
-                    os.fsync(logs['zone'].file.fileno())
-                except Exception:
-                    pass
-                logs['zone'].close()
-        except Exception as e:
-            robot.log.exception(f"Failed to close zone log for robot {robotID}: {e}")
+        # only log zone if it exists (only for obstacle floor)
+        if argos_name == "obstacle":
+            try:
+                if logs.get('zone'):
+                    logs['zone'].file.flush()
+                    try:
+                        os.fsync(logs['zone'].file.fileno())
+                    except Exception:
+                        pass
+                    logs['zone'].close()
+            except Exception as e:
+                robot.log.exception(f"Failed to close zone log for robot {robotID}: {e}")
         try:
             if logs.get('block'):
                 logs['block'].file.flush()

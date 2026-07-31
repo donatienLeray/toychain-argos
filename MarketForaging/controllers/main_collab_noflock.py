@@ -13,23 +13,24 @@ sys.path += [os.environ['MAINFOLDER'], \
              os.environ['EXPERIMENTFOLDER']
             ]
 
-from controllers.movement import RandomWalk, Navigate, Odometry, OdoCompass, GPS
-from controllers.groundsensor import ResourceVirtualSensor, Resource
-from controllers.erandb import ERANDB
-from controllers.rgbleds import RGBLEDs
-from controllers.aux import *
-from controllers.aux import Timer
-from controllers.statemachine import *
+from controllers.actusensors.movement import RandomWalk, Navigate, Odometry, OdoCompass, GPS
+from controllers.actusensors.groundsensor import ResourceVirtualSensor, Resource
+from controllers.actusensors.erandb import ERANDB
+from controllers.actusensors.rgbleds import RGBLEDs
+from controllers.utils import *
+from controllers.utils import Timer
+from controllers.utils import FiniteStateMachine
 
-from controllers.control_params import params as cp
-from loop_functions.loop_params import params as lp
+from controllers.params import params as cp
+from loop_functions.params import params as lp
 
 from toychain.src.Node import Node
-from toychain.src.Block import Block, State
-from toychain.src.utils import gen_enode
+from toychain.src.Block import Block
+from toychain.src.utils.helpers import gen_enode
 
 from toychain.src.consensus.ProofOfAuthority import ProofOfAuthority
 from toychain.src.Transaction import Transaction
+from scs.contract import Contract as State
 
 # /* Global Variables */
 #######################################################################

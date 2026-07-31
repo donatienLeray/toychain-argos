@@ -3,16 +3,17 @@
 
 # /* Import Packages */
 #######################################################################
-import random, math
-import time, sys, os
+import random
+import sys, os
 import json
+import warnings
 from json import loads
 
 mainFolder = os.environ['MAINFOLDER']
 experimentFolder = os.environ['EXPERIMENTFOLDER']
 sys.path += [mainFolder, experimentFolder]
 
-from controllers.actusensors.movement     import RandomWalk, Navigate, Odometry, OdoCompass, GPS
+from controllers.actusensors.movement     import RandomWalk, Navigate, OdoCompass, GPS
 from controllers.actusensors.groundsensor import ResourceVirtualSensor, Resource
 from controllers.actusensors.erandb       import ERANDB
 from controllers.actusensors.rgbleds      import RGBLEDs
@@ -26,8 +27,41 @@ from loop_functions.params import params as lp
 from toychain.src.utils.helpers import gen_enode
 from toychain.src.consensus.ProofOfAuthority import ProofOfAuthority, BLOCK_PERIOD
 from toychain.src.Node import Node
-from toychain.src.Block import Block, State
+from toychain.src.Block import Block
 from toychain.src.Transaction import Transaction
+
+import importlib
+#-----------------------------
+# toychain consensus mechanism
+# import the correct consensus mechanism dynamically
+if 'consensus' in lp and 'module' in lp['consensus']:
+    module_name = "toychain.src.consensus." + lp['consensus']['module']
+    module = importlib.import_module(module_name)
+    ConsensusClass = getattr(module, lp['consensus']['class'])
+    BLOCK_PERIOD = getattr(module, "BLOCK_PERIOD")
+else: # default
+    from toychain.src.consensus.ProofOfAuthority import ProofOfAuthority as ConsensusClass, BLOCK_PERIOD 
+    print("No consensus module specified in loop_function params, defaulting to ProofOfAuthority")
+# same as choosisng:
+#from toychain.src.consensus.ProofOfConnection import ProofOfConnection , BLOCK_PERIOD
+#from toychain.src.consensus.ProofOfAuth import ProofOfAuthority , BLOCK_PERIOD
+#from toychain.src.consensus.ProofOfWork import ProofOfWork, BLOCK_PERIOD
+#from toychain.src.consensus.ProofOfStake import ProofOfStake, BLOCK_PERIOD
+#-----------------------------
+# toychain core modules
+from toychain.src.Block import Block
+from toychain.src.Node import Node
+from toychain.src.Transaction import Transaction
+#-----------------------------
+# toychain State
+# import the correct smart contract module dynamically
+if 'scs' in lp and 'files' in lp['scs']:
+    module_name = "scs." + lp['scs']['files']       
+    module = importlib.import_module(module_name)
+    State = getattr(module, "Contract") 
+else: # default
+    from scs.noepochs import Contract as State
+#-----------------------------
 
 # /* Global Variables */
 #######################################################################
@@ -55,8 +89,12 @@ logtofile = False
 market   = Resource({"x":lp['market']['x'], "y":lp['market']['y'], "radius": lp['market']['r']})
 cache    = Resource({"x":lp['cache']['x'], "y":lp['cache']['y'], "radius": lp['cache']['r']})
 
-# Toychain genesis block
-GENESIS = Block(0, 0000, [], [gen_enode(i+1) for i in range(int(lp['environ']['NUMROBOTS']))], 0, 0, 0, nonce = 1, state = State())
+# intalise Genesis Block
+#######################################################################
+if ConsensusClass.__name__ == 'ProofOfAuthority' or ConsensusClass.__name__ == 'ProofOfWork':
+    GENESIS = Block(0, 0000, [], [gen_enode(i+1) for i in range(int(lp['environ']['NUMROBOTS']))], 0, 0, 0, nonce = 1, state = State())
+else:
+    GENESIS = Block(0, 0000, [], 0, 0, 0, 0, nonce = 1, state = State())
 
 # /* Experiment State-Machine */
 #######################################################################
@@ -96,10 +134,9 @@ def init():
     robot.variables.set_attribute("state", "")
     robot.variables.set_attribute("forageTimer", "0")
     robot.variables.set_attribute("quantity", "0")
-    robot.variables.set_attribute("block", "")
     robot.variables.set_attribute("groupSize", "1")
     robot.variables.set_attribute("block", "0")
-    robot.variables.set_attribute("hash", str(hash("genesis")))
+    robot.variables.set_attribute("block_hash", str(hash("genesis")))
     robot.variables.set_attribute("state_hash", str(hash("genesis")))
     robot.variables.set_attribute("mempl_hash", str(hash("genesis")))
     robot.variables.set_attribute("mempl_size", "0")
@@ -400,26 +437,26 @@ def controlstep():
                 homing()
 
             else:
-                # action = random.choices(('explore', 'verify', 'forage'), weights=(30, 30, 30))[0]
+                action = random.choices(('explore', 'verify', 'forage'), weights=(30, 30, 30))[0]
 
-                # if action == 'explore':
+                if action == 'explore':
 
                 # State transition: EXPLORE
-                duration = random.gauss(cp['explore_mu'], cp['explore_sg'])*10
-                clocks['explore'].set(duration)
-                fsm.setState(States.EXPLORE, message = "Duration: %.2f" % duration)
+                    duration = random.gauss(cp['explore_mu'], cp['explore_sg'])*10
+                    clocks['explore'].set(duration)
+                    fsm.setState(States.EXPLORE, message = "Duration: %.2f" % duration)
 
-                # elif action == 'verify' and unverified_by_me:
+                elif action == 'verify' and unverified_by_me:
 
-                #     # State transition: VERIFY
-                #     patch = random.choice(unverified_by_me)
-                #     fsm.setState(States.VERIFY, pass_along = patch)
+                    # State transition: VERIFY
+                    patch = random.choice(unverified_by_me)
+                    fsm.setState(States.VERIFY, pass_along = patch)
 
-                # elif action == 'forage' and verified:
+                elif action == 'forage' and verified:
 
-                #     # State transition: FORAGE
-                #     patch = random.choice(verified)
-                #     fsm.setState(States.FORAGE, pass_along = patch)
+                    # State transition: FORAGE
+                    patch = random.choice(verified)
+                    fsm.setState(States.FORAGE, pass_along = patch)
 
         #########################################################################################################
         #### State::EVADING
@@ -609,9 +646,9 @@ def controlstep():
                     robot.variables.set_attribute("depleted", "")
                     robot.log.info(f"Resource is: depleted {depleted}/found {found}")
                     patch_to_forage['json']['quantity'] = 0 
-                    # txdata = {'function': 'verify', 'inputs': (0, 0, patch_to_forage['json'], True)}
-                    # tx = Transaction(sender = me.id, receiver = 0, value = 0, data = txdata, timestamp = w3.custom_timer.time())
-                    # w3.send_transaction(tx)
+                    txdata = {'function': 'verify', 'inputs': (0, 0, patch_to_forage['json'], True)}
+                    tx = Transaction(sender = me.id, receiver = 0, value = 0, data = txdata, timestamp = w3.custom_timer.time())
+                    w3.send_transaction(tx)
 
                 robot.variables.set_attribute("foraging", "")
                 fsm.setState(States.DROP, message = f"Collected {robot.variables.get_attribute('quantity')} {patch_to_forage['json']['quality']}", pass_along = patch_to_forage)
@@ -634,19 +671,19 @@ def controlstep():
             if arrived:
 
                 # Transact to drop resource
-                # if not txs['drop']:
-                # robot.log.info(f"Dropping.")
-                    # txdata = {'function': 'forage', 'inputs': (patch_to_drop['x'], patch_to_drop['y'], patch_to_drop['json'])}
-                    # txs['drop'] = Transaction(sender = me.id, data = txdata, timestamp = w3.custom_timer.time())
-                    # w3.send_transaction(txs['drop'])
+                if not txs['drop']:
+                    robot.log.info(f"Dropping.")
+                    txdata = {'function': 'forage', 'inputs': (patch_to_drop['x'], patch_to_drop['y'], patch_to_drop['json'])}
+                    txs['drop'] = Transaction(sender = me.id, data = txdata, timestamp = w3.custom_timer.time())
+                    w3.send_transaction(txs['drop'])
    
                 # # Transition state  
-                # else:
-                #     if w3.get_transaction_receipt(txs['drop'].id):
-                robot.variables.set_attribute("dropResource", "True")
+                else:
+                    if w3.get_transaction_receipt(txs['drop'].id):
+                        robot.variables.set_attribute("dropResource", "True")
 
                 if not robot.variables.get_attribute("hasResource"):
-                    # txs['drop'] = None
+                    txs['drop'] = None
                     robot.variables.set_attribute("dropResource", "")   
                     fsm.setState(States.FORAGE, message = "Dropped: %s" % patch_to_drop['json']['quality'], pass_along = patch_to_drop)                       
 
