@@ -1,10 +1,4 @@
-{"x": -0.56, "y": -0.83, "radius": 0.2, "quantity": 15, "quality": "blue", "utility": 200}
-{"x": 0.09, "y": -0.99, "radius": 0.2, "quantity": 14, "quality": "blue", "utility": 200}
+{"x": -0.56, "y": -0.83, "radius": 0.2, "quantity": 10, "quality": "red", "utility": 1}
+{"x": 0.09, "y": -0.99, "radius": 0.2, "quantity": 10, "quality": "green", "utility": 1}
 {"x": 0.66, "y": -0.54, "radius": 0.2, "quantity": 30, "quality": "blue", "utility": 200}
-{"x": -0.06, "y": 0.79, "radius": 0.2, "quantity": 17, "quality": "blue", "utility": 200}
-{"x": -0.74, "y": 0.58, "radius": 0.2, "quantity": 30, "quality": "blue", "utility": 200}
-{"x": 1.01, "y": 0.11, "radius": 0.2, "quantity": 30, "quality": "blue", "utility": 200}
-{"x": -0.96, "y": 0.12, "radius": 0.2, "quantity": 30, "quality": "blue", "utility": 200}
-{"x": 0.8, "y": 0.67, "radius": 0.2, "quantity": 30, "quality": "blue", "utility": 200}
-{"x": -0.69, "y": -0.27, "radius": 0.2, "quantity": 14, "quality": "blue", "utility": 200}
-{"x": -0.46, "y": 1.01, "radius": 0.2, "quantity": 30, "quality": "blue", "utility": 200}
+{"x": -0.52, "y": 0.84, "radius": 0.2, "quantity": 24, "quality": "yellow", "utility": 300}

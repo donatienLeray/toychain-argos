@@ -23,7 +23,7 @@ params['recruit_speed']  = 18
 params['buy_duration']   = 30
 arena_dim = _env_float("ARENADIM", _computed_arena_dim())
 params['explore_mu']     = arena_dim / params['scout_speed'] * 100
-params['explore_sg']     = 2
+params['explore_sg']     = 5
 
 
 params['gsFreq']     = 20

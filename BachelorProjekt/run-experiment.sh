@@ -156,12 +156,14 @@ config "SPEEDUNIFORM" "True"
 config ARGOSNAME "foraging" #greeter|obstacle|foraging
 # set the cotroller to main_foraging.py for experiment 4_foragingelse set to main
 config "CTRL" "main_foraging.py" #main|main_foraging.py
-config "CONSENSUS" "ProofOfAuthority"
+config "CONSENSUS" "ProofOfConnection"
 loopconfig "scs" "update" "\"no_update\""
 loopconfig "scs" "decay" 50
 
 # set number of robots
 config "NUMROBOTS" 5
+patches_m=$(( 5 / 5 ))
+loopconfig "patches" "counts" "{'red': ${patches_m}, 'green': ${patches_m}, 'blue': ${patches_m}, 'yellow': ${patches_m}}"
 # run experiment
 wait
 run "${EXP}/${CFG}" $@
@@ -171,7 +173,9 @@ run "${EXP}/${CFG}" $@
 # run experiment with different consensus mechanisms
 #EXP=1_random_walk
 #EXP=2_random_walk_different_speed
-EXP=3_random_walk_obstacle_trap
+#EXP=3_random_walk_obstacle_trap
+EXP=4_foraging	
+
 
 # Explorer
 config "EXPLORER" "False"
@@ -193,6 +197,7 @@ config ARGOSNAME "obstacle" #greeter|obstacle|foraging
 config CON1 "${EXPERIMENTFOLDER}/controllers/main.py" #main|main_foraging.py
 
 
+
 ##########
 # RANDOM #
 ##########
@@ -206,6 +211,10 @@ for UTIL in $(seq 5 5 25); do
 	CFG="R-PoA_${UTIL}"
 	# set number of robots
 	config "NUMROBOTS" "${UTIL}"
+	# foraging sepcific parameters Util/5
+	# multiplicator for paches= Numrobot/5
+	patches_m=$(( UTIL / 5 ))
+	loopconfig "patches" "counts" "{'red': ${patches_m}, 'green': ${patches_m}, 'blue': ${patches_m}, 'yellow': ${patches_m}}"
 	# run experiment
 	wait
 	run "${EXP}/${CFG}" $@

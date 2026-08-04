@@ -135,24 +135,24 @@ params['patches']['distribution'] = 'uniform'
 # 									     'y_sg': 0.15 * params['generic']['arena_size']}]
 # params['patches']['distribution'] = 'fixed' 
 
-params['patches']['counts'] = {'red': 0, 'green': 0, 'blue': 10, 'yellow': 0}
+params['patches']['counts'] = {'red': 1, 'green': 1, 'blue': 1, 'yellow': 1}
 # params['patches']['x'] = [ 0.25]
 # params['patches']['y'] = [ 0.25]
 
-# params['patches']['counts'] = {'red': 0, 'green': 0 , 'blue': 1, 'yellow': 1}
+# params['patches']['counts'] = {'red': 1, 'green': 1, 'blue': 1, 'yellow': 1}
 # params['patches']['x'] = [ 0.15, 0.30]
 # params['patches']['y'] = [ 0.30, 0.15]
 
 params['patches']['respawn']   = True
 params['patches']['known']     = False
 params['patches']['radius']    = 0.2
-params['patches']['qtty_min']  = 30
+params['patches']['qtty_min']  = 10
 params['patches']['qtty_max']  = 30
 params['patches']['dist_min']  = 0.6 * params['generic']['arena_size']/2
 params['patches']['dist_max']  = 0.9 * params['generic']['arena_size']/2
 
-params['patches']['qtty_min']  = {'red': 30, 'green': 30, 'blue': 30, 'yellow': 30}
-params['patches']['qtty_max']  = {'red': 30, 'green': 30, 'blue': 30, 'yellow': 30}
+params['patches']['qtty_min']  = {'red': 10, 'green': 30, 'blue': 20, 'yellow': 10}
+params['patches']['qtty_max']  = {'red': 10, 'green': 30, 'blue': 30, 'yellow': 30}
 
 params['patches']['radii']  = {k: params['patches']['radius'] for k in params['patches']['qualities']}
 # params['patches']['radii']  = {k: round(math.sqrt(params['patches']['qtty_min'][k])/20,2) for k in params['patches']['qualities']}

@@ -237,12 +237,8 @@ def init():
     # /* Initialize logmodules*/
     #######################################################################
     
-    #txs['hi'] = None
     txs['update'] = None
-    #txs['leave'] = None
-    #txs['join']  = None
-    #txs['drop'] = None
-    #txs['update'] = None
+    txs['drop'] = None
 
 #########################################################################################################################
 #### CONTROL STEP #######################################################################################################
@@ -539,9 +535,9 @@ def controlstep():
                     robot.variables.set_attribute("depleted", "")
                     robot.log.info(f"Resource is: depleted {depleted}/found {found}")
                     patch_to_forage['json']['quantity'] = 0 
-                    # txdata = {'function': 'verify', 'inputs': (0, 0, patch_to_forage['json'], True)}
-                    # tx = Transaction(sender = me.id, receiver = 0, value = 0, data = txdata, timestamp = w3.custom_timer.time())
-                    # w3.send_transaction(tx)
+                    txdata = {'function': 'verify', 'inputs': (0, 0, patch_to_forage['json'], True)}
+                    tx = Transaction(sender = me.id, receiver = 0, value = 0, data = txdata, timestamp = w3.custom_timer.time())
+                    w3.send_transaction(tx)
 
                     robot.variables.set_attribute("foraging", "")
                     fsm.setState(States.DROP, message = f"Collected {robot.variables.get_attribute('quantity')} {patch_to_forage['json']['quality']}", pass_along = patch_to_forage)
@@ -650,19 +646,19 @@ def controlstep():
             if arrived:
             
                 # Transact to drop resource
-                # if not txs['drop']:
-                # robot.log.info(f"Dropping.")
-                    # txdata = {'function': 'forage', 'inputs': (patch_to_drop['x'], patch_to_drop['y'], patch_to_drop['json'])}
-                    # txs['drop'] = Transaction(sender = me.id, data = txdata, timestamp = w3.custom_timer.time())
-                    # w3.send_transaction(txs['drop'])
+                if not txs['drop']:
+                    robot.log.info(f"Dropping.")
+                    txdata = {'function': 'forage', 'inputs': (patch_to_drop['x'], patch_to_drop['y'], patch_to_drop['json'])}
+                    txs['drop'] = Transaction(sender = me.id, data = txdata, timestamp = w3.custom_timer.time())
+                    w3.send_transaction(txs['drop'])
                
-                # # Transition state  
-                # else:
-                #     if w3.get_transaction_receipt(txs['drop'].id):
-                robot.variables.set_attribute("dropResource", "True")
+                # Transition state  
+                else:
+                     if w3.get_transaction_receipt(txs['drop'].id):
+                        robot.variables.set_attribute("dropResource", "True")
             
             if not robot.variables.get_attribute("hasResource"):
-                # txs['drop'] = None
+                txs['drop'] = None
                 robot.variables.set_attribute("dropResource", "")   
                 fsm.setState(States.FORAGE, message = "Dropped: %s" % patch_to_drop['json']['quality'], pass_along = patch_to_drop)    
 

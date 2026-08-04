@@ -18,8 +18,11 @@ class Contract(StateMixin):
             self.n           = 0
             self.private     = {}
             self.balances    = {}
-
+  
             # Init your own state variables
+            self.all_hellos  = {}
+            self.trans = 0
+            
             if argos_name == "foraging":
                 self.patches     = []
                 self.robots      = {}
@@ -28,25 +31,22 @@ class Contract(StateMixin):
                                     'verify':  dict(),
                                     'forage':  dict()
                                     }
-            else:
-                self.all_hellos  = {}
-                self.trans = 0
             
-    if argos_name != "foraging":
-        def Hello(self, neighbor):
+    
+    def Hello(self, neighbor):
 
-            self.all_hellos.setdefault(neighbor, [])
-            self.all_hellos[neighbor] += self.msg.sender
+        self.all_hellos.setdefault(neighbor, [])
+        self.all_hellos[neighbor] += self.msg.sender
 
-            logger.info(f"Robot {self.msg.sender} greeted {neighbor} !")
+        logger.info(f"Robot {self.msg.sender} greeted {neighbor} !")
 
 
-        def get_block_reward(self,block):
+    def get_block_reward(self,block):
         
-            return len(block.data)
+        return len(block.data)
     
 ########### only for foraging experiments, not for general use############
-    else:
+    if argos_name == "foraging":
         
         def robot(self):
             return {'task': -1}

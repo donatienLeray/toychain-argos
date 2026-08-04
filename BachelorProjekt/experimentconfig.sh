@@ -7,7 +7,7 @@ export EXPERIMENTFOLDER="$MAINFOLDER/BachelorProjekt"
 # [[ ":$PATH:" != *":$MAINFOLDER/scripts:"* ]] && export PATH=$PATH:$MAINFOLDER/scripts
 
 # [SC]
-export CONSENSUS=ProofOfAuthority
+export CONSENSUS=ProofOfConnection
 case "$CONSENSUS" in
 	"ProofOfAuthority")  export SCNAME="poa_w" ;;
 	"ProofOfConnection") export SCNAME="poc" ;;
