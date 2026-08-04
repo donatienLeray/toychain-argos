@@ -30,5 +30,5 @@ params['gsFreq']     = 20
 params['erbtFreq']   = 10
 params['erbDist']    = 175
 
-params['error']      = 0.025
-params['max_Q']       = 10
+params['error']      = 0
+params['max_Q']       = 8

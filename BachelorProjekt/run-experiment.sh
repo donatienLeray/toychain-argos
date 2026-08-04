@@ -133,10 +133,48 @@ run() {
 	fi
 }
 
+#####################################################################
+## run experiment with different consensus mechanisms
+#EXP=test
+#CFG=test
+#
+## Explorer
+#config "EXPLORER" "False"
+#
+## standard values
+#config "TPS" 10
+#config "REPS" 20
+#config "LENGTH" 400
+#config "REP_SEED" "True"
+#loopconfig "debug" "main" "False"
+#loopconfig "debug" "loop" "True"
+#loopconfig "debug" "scs" "True"
+#config "AGENTSPEED" 18
+## set to to false for experiment 2_random_walk_different_speed
+#config "SPEEDUNIFORM" "True"
+## set to obstacle for experiment 3_random_walk_obstacle_trap else set to greeter
+#config ARGOSNAME "foraging" #greeter|obstacle|foraging
+## set the cotroller to main_foraging.py for experiment 4_foragingelse set to main
+#config "CTRL" "main_foraging.py" #main|main_foraging.py
+#config "CONSENSUS" "ProofOfAuthority"
+#loopconfig "scs" "update" "\"no_update\""
+#loopconfig "scs" "decay" 50
+#
+## set number of robots
+#config "NUMROBOTS" 15
+#patches_m=$(( 15*5))
+#loopconfig "patches" "counts" "{'red': 0, 'green': 0, 'blue': ${patches_m}, 'yellow': 0}"
+## run experiment
+#wait
+#run "${EXP}/${CFG}" $@
+
+
 ####################################################################
 # run experiment with different consensus mechanisms
-EXP=test
-CFG=test
+#EXP=1_random_walk
+#EXP=2_random_walk_different_speed
+#EXP=3_random_walk_obstacle_trap
+EXP=4_foraging	
 
 # Explorer
 config "EXPLORER" "False"
@@ -156,47 +194,6 @@ config "SPEEDUNIFORM" "True"
 config ARGOSNAME "foraging" #greeter|obstacle|foraging
 # set the cotroller to main_foraging.py for experiment 4_foragingelse set to main
 config "CTRL" "main_foraging.py" #main|main_foraging.py
-config "CONSENSUS" "ProofOfConnection"
-loopconfig "scs" "update" "\"no_update\""
-loopconfig "scs" "decay" 50
-
-# set number of robots
-config "NUMROBOTS" 5
-patches_m=$(( 5 / 5 ))
-loopconfig "patches" "counts" "{'red': ${patches_m}, 'green': ${patches_m}, 'blue': ${patches_m}, 'yellow': ${patches_m}}"
-# run experiment
-wait
-run "${EXP}/${CFG}" $@
-
-
-####################################################################
-# run experiment with different consensus mechanisms
-#EXP=1_random_walk
-#EXP=2_random_walk_different_speed
-#EXP=3_random_walk_obstacle_trap
-EXP=4_foraging	
-
-
-# Explorer
-config "EXPLORER" "False"
-
-# standard values
-config "TPS" 10
-config "REPS" 20
-config "LENGTH" 400
-config "REP_SEED" "True"
-loopconfig "debug" "main" "False"
-loopconfig "debug" "loop" "True"
-loopconfig "debug" "scs" "True"
-config "AGENTSPEED" 18
-# set to to false for experiment 2_random_walk_different_speed
-config "SPEEDUNIFORM" "True"
-# set to obstacle for experiment 3_random_walk_obstacle_trap else set to greeter
-config ARGOSNAME "obstacle" #greeter|obstacle|foraging
-# set the cotroller to main_foraging.py for experiment 4_foragingelse set to main
-config CON1 "${EXPERIMENTFOLDER}/controllers/main.py" #main|main_foraging.py
-
-
 
 ##########
 # RANDOM #
@@ -213,8 +210,8 @@ for UTIL in $(seq 5 5 25); do
 	config "NUMROBOTS" "${UTIL}"
 	# foraging sepcific parameters Util/5
 	# multiplicator for paches= Numrobot/5
-	patches_m=$(( UTIL / 5 ))
-	loopconfig "patches" "counts" "{'red': ${patches_m}, 'green': ${patches_m}, 'blue': ${patches_m}, 'yellow': ${patches_m}}"
+	patches_m=$(( UTIL * 5 ))
+	loopconfig "patches" "counts" "{'red': 0, 'green': 0, 'blue': ${patches_m}, 'yellow': 0}"
 	# run experiment
 	wait
 	run "${EXP}/${CFG}" $@
@@ -238,6 +235,8 @@ for consensus in "ProofOfAuthority" "ProofOfWork" "ProofOfConnection"; do
 		esac
 		# set number of robots
 		config "NUMROBOTS" "${UTIL}"
+		patches_m=$(( UTIL * 5 ))
+		loopconfig "patches" "counts" "{'red': 0, 'green': 0, 'blue': ${patches_m}, 'yellow': 0}"
 		# run experiment
 		wait
 		run "${EXP}/${CFG}" $@

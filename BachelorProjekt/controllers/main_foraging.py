@@ -104,15 +104,11 @@ logtofile = False
 # /* Experiment State-Machine */
 #######################################################################
 
-class States(Enum):
-    PLAN    = 1
-    EVADING = 2
-    HOMING  = 3
-    EXPLORE = 4
-    FORAGE  = 5
-    ANTENA  = 6
-    VERIFY  = 7
-    DROP    = 8
+class States(Enum):  
+    EXPLORE  = 1
+    NAVIGATE = 2
+    FORAGE   = 3
+    DROP     = 4
     
     
 ####################################################################################################################################################################################
@@ -120,7 +116,7 @@ class States(Enum):
 ####################################################################################################################################################################################
 
 def init():
-    global clocks,counters, logs, submodules, me, rw, nav, odo, gps, rb, w3, fsm, rs, erb, rgb, robotID, robotSPEED, zoneInside, zoneBounds, txs
+    global clocks,counters, logs, submodules, me, rw, nav, odo, gps, rb, w3, fsm, rs, erb, rgb, robotID, robotSPEED, discovered, explore
     robotID = str(int(robot.variables.get_id()[2:])+1)
     robotIP = '127.0.0.1'
     robot.variables.set_attribute("id", str(robotID))
@@ -220,7 +216,7 @@ def init():
     rgb = RGBLEDs(robot)
 
     # /* Init Finite-State-Machine */
-    fsm = FiniteStateMachine(robot, start = States.PLAN)
+    fsm = FiniteStateMachine(robot, start = States.EXPLORE)
 
     # List of submodules --> iterate .start() to start all
     submodules = [erb, rs, w3, robot.odo, fsm]
@@ -237,16 +233,15 @@ def init():
     # /* Initialize logmodules*/
     #######################################################################
     
-    txs['update'] = None
-    txs['drop'] = None
-
+    discovered = []
+    explore = None
 #########################################################################################################################
 #### CONTROL STEP #######################################################################################################
 #########################################################################################################################
 
 
 def controlstep():
-    global clocks, counters, startFlag, startTime
+    global clocks, counters, startFlag, startTime, explore
 
     ###########################
     ######## ROUTINES #########
@@ -284,46 +279,8 @@ def controlstep():
 
         # Turn on LEDs according to geth peer count
         rgb.setLED(rgb.all, rgb.presets.get(len(w3.peers), 3*['red']))
-
-    def evading(patch):
-    
-        # Navigate orthogonaly to the patch-market
-        targets = [Vector2D(patch['json']['x'], patch['json']['y']).rotate(20, degrees=True),
-                   Vector2D(patch['json']['x'], patch['json']['y']).rotate(-20, degrees=True)]
-        target = min(targets, key=nav.get_distance_to)
-    
-        arrived = False
-            
-        nav.sensor = 'gps'
-        if nav.navigate_with_obstacle_avoidance(target) < 0.05:
-            arrived = True
-    
-        nav.sensor = 'odometry'
-    
-        return arrived
-    
-    def homing():
  
-        # Navigate to the market
-        arrived = True
- 
-        nav.sensor = 'gps'
- 
-        if nav.get_distance_to(market._pr) < 0.9*market.radius:           
-            nav.avoid(move = True)
-             
-        elif nav.get_distance_to(market._pr) < market.radius and len(w3.peers) > 1:
-            nav.avoid(move = True)
- 
-        else:
-            nav.navigate_with_obstacle_avoidance(market._pr)
-            arrived = False
- 
-        nav.sensor = 'odometry'
- 
-        return arrived
- 
-    def dropping(resource):
+    def homing(resource):
  
         direction = (Vector2D(resource['x'],resource['y'])-market._pv).rotate(-25, degrees = True).normalize()
         target = direction*(market.radius+cache.radius)/2+market._pv
@@ -338,24 +295,40 @@ def controlstep():
         else:
             nav.navigate_with_obstacle_avoidance(target)
             arrived = False
+         
+        patch_gs = sensing()   
+        if patch_gs:
+            discovered.append({'x': patch_gs['json']['x'], 'y': patch_gs['json']['y']})
  
         nav.sensor = 'odometry'
  
         return arrived
  
-    def sensing(gps = False):
+    def sensing():
  
         # Sense environment for resources
         res = rs.getNew()
  
         if res:
-            if gps:
-                return {'x':res.x, 'y':res.y, 'json':json.loads(res._json)}
-            return {'x':round(res.x + robot.odo.ex, 2), 'y':round(res.y + robot.odo.ey, 2), 'json':json.loads(res._json)}
- 
+            return {'x':res.x, 'y':res.y, 'json':json.loads(res._json)}
+        
     
+    def remove_patch_from_discovered(patch):
+        # Remove a patch from the discovered list based on its coordinates
+        for i, p in enumerate(discovered):
+            if p.get("x") == patch['x'] and p.get("y") == patch['y']:
+                discovered.pop(i)
+                break
     
-    
+    def drop_if_passing_nest():
+        if nav.get_distance_to(market._p) < market.radius + 0.5* (cache.radius-market.radius):
+                    robot.variables.set_attribute("dropResource", "True")
+                            
+                    if not robot.variables.get_attribute("hasResource"):
+                        robot.log.info(f"Dropped {robot.variables.get_attribute('quantity')}")
+                        robot.variables.set_attribute("dropResource", "")  
+
+  
     if not startFlag:
         ##########################
         #### FIRST STEP ##########
@@ -363,6 +336,7 @@ def controlstep():
 
         startFlag = True 
         startTime = 0
+        
 
         robot.log.info('--//-- Starting Experiment --//--')
 
@@ -397,10 +371,6 @@ def controlstep():
         for clock in clocks.values():
             clock.time.step()
 
-        # # Perform file logging step
-        # if logs['resources'].query():
-        #     logs['resources'].log([len(rb)])
-
         if clocks['peering'].query():
             peering()
             
@@ -409,14 +379,6 @@ def controlstep():
         
         if robot.variables.get_attribute("at") == "cache":
             robot.odo.setPosition()
-        
-        # Read patch info from blockchain
-        patches    = w3.sc.getPatches()
-        verified   = [p for p in patches if p['status'] == 'verified' and me.id not in p["votes_remove"]]
-        unverified = [p for p in patches if p['status'] == 'pending']
-        
-        unverified_by_me = [p for p in unverified if me.id not in p['votes']]
-        explored_by_me   = [p for p in unverified if me.id == p['explorer']]
 
         # Update blockchain state on the robot C++ object
         last_block = w3.get_block('last')
@@ -429,209 +391,121 @@ def controlstep():
         robot.variables.set_attribute("mempl_size", str(len(w3.mempool)))
 
         erb.setData(hash_to_int(last_block.total_difficulty, 2), indices=[1,2])
-        erb.setData(hash_to_int(w3.mempool_hash(astype='int'), 1), indices=[3])
-        
-        # (Visualization only, can comment out)
-        robot.variables.set_attribute("verified", str([(p['x'], p['y'], p['json']) for p in patches if p['status'] == 'verified']))
-        robot.variables.set_attribute("pending",  str([(p['x'], p['y'], p['json']) for p in patches if p['status'] == 'pending']))
-        robot.variables.set_attribute("allpts",  str([(p['all_x'], p['all_y'], p['json']) for p in patches if p['status'] == 'pending']))
-
-        #########################################################################################################
-        #### State::PLAN
-        #########################################################################################################
-        if fsm.query(States.PLAN):
+        erb.setData(hash_to_int(w3.mempool_hash(astype='int'), 1), indices=[3]) 
             
-            if fsm.elapsed < 100:
-                homing()
-            
-            else:
-                # start an exploration bout
-                duration = random.gauss(cp['explore_mu'], cp['explore_sg'])*10
-                clocks['explore'].set(duration)
-                fsm.setState(States.EXPLORE, message = "Duration: %.2f" % duration)
-
-        #########################################################################################################
-        #### State::EVADING
-        #########################################################################################################
-
-        elif fsm.query(States.EVADING):
-
-            arrived = evading(fsm.pass_along)
-
-            if arrived:
-                fsm.setState(States.HOMING)
-
-        #########################################################################################################
-        #### State::HOMING
-        #########################################################################################################
-
-        elif fsm.query(States.HOMING):
-
-            arrived = homing()
-
-            if arrived:
-                fsm.setState(States.PLAN)
 
         #########################################################################################################
         #### State::EXPLORE
         #########################################################################################################
         if fsm.query(States.EXPLORE):
+            
+            if explore is None:
+                # 20% chance to explore, 80% chance to navigate to a discovered patch
+                explore = random.random() <= 0.2
+            
+            # if there are discovered patches, navigate to the closest one
+            if not explore and len(discovered) > 0:
+                discovered.sort(key=lambda p: nav.get_distance_to((p['x'], p['y'])))
+                robot.log.info(f"NAVIGATE to patch ({discovered[0]['x']},{discovered[0]['y']})")
+                explore = None
+                fsm.setState(States.NAVIGATE, message = "Switching to NAVIGATE", pass_along=discovered[0])  
 
+            # Random walk
             rw.step()
 
             # Look for resources
             patch_gs = sensing()
 
-            # Found resource: propose on chain and go to forage
-            if patch_gs and not txs.get('update'):
-                txdata = {'function': 'propose', 'inputs': (patch_gs['x'], patch_gs['y'], patch_gs['json'])}
-                txs['update'] = Transaction(sender = me.id, receiver = 0, value = 0, data = txdata, timestamp = w3.custom_timer.time())
-                w3.send_transaction(txs['update'])
+            # Found resourcee forage
+            if patch_gs:
                 robot.log.info(f"Discovered {patch_gs['json'].get('quality','?')}")
+                discovered.append({'x': patch_gs['json']['x'], 'y': patch_gs['json']['y']})
                 fsm.setState(States.FORAGE, message = "Found patch", pass_along=patch_gs)
-                txs['update'] = None
+                
+            drop_if_passing_nest()
+            
+        #########################################################################################################
+        #### State::NAVIGATE
+        #########################################################################################################
+        if fsm.query(States.NAVIGATE):
+            
+            destination = fsm.pass_along
 
-            elif clocks['explore'].query():
-                fsm.setState(States.HOMING, message = "Finished exploring")
-                txs['update'] = None
+            # Navigate to resource
+            distance = nav.navigate_with_obstacle_avoidance((destination['x'], destination['y']))
+            
+            # Sense for resources
+            patch_gs = sensing()
+            
+            # found patch forage it
+            if patch_gs:
+                
+                # patch is destination patch
+                if(patch_gs['json']['x'], patch_gs['json']['y']) == (destination['x'], destination['y']):
+                    robot.log.info(f"Arrived at patch ({destination['x']},{destination['y']})")
+                    
+                # Found new resourcee forage
+                else:
+                    robot.log.info(f"Discovered {patch_gs['json'].get('quality','?')}")
+                    discovered.append({'x': patch_gs['json']['x'], 'y': patch_gs['json']['y']})
+                
+                fsm.setState(States.FORAGE, message = "Found patch", pass_along=patch_gs)
+            # patch not found
+            elif distance < 0.8*lp['patches']['radius']:
+                remove_patch_from_discovered(destination)
+                robot.log.info(f"Patch not found at ({destination['x']},{destination['y']})")
+                fsm.setState(States.EXPLORE, message = "Patch not found")
+                
+            drop_if_passing_nest()
 
         #########################################################################################################
         #### State::FORAGE
         #########################################################################################################
-        elif fsm.query(States.FORAGE):
+        if fsm.query(States.FORAGE):
+            
+            # get patch information from the environment
+            patch = sensing()
+            
+            # Current observed quantity for decision making
+            try:
+                current_q = int(patch['json'].get('quantity', 0))
+            except Exception:
+                current_q = 0
 
-            patch_to_forage = fsm.pass_along
-            arrived  = False
-            found    = False
-            finished = False
-            depleted = False
+            # patch is empty
+            depleted = current_q == 0 or patch is None
+            # robot reached its capacity
+            full = int(robot.variables.get_attribute("quantity")) >= cp['max_Q']
             
-            # Navigate to resource
-            distance = nav.navigate_with_obstacle_avoidance((patch_to_forage['x'], patch_to_forage['y']))
-            
-            # Sense for resources
-            patch_gs = sensing()
-            
-            if distance < 0.8*patch_to_forage['json']['radius']:
-                arrived  = True  
-            
-            if patch_gs and (patch_gs['json']['x'], patch_gs['json']['y']) == (patch_to_forage['json']['x'], patch_to_forage['json']['y']):
-                patch_to_forage = patch_gs
-                found = True
-            
-            if int(robot.variables.get_attribute("quantity")) >= cp['max_Q'] or fsm.elapsed > 800:
-                finished = True
-            
-            if robot.variables.get_attribute("depleted") == "True":
-                depleted = True
-            
-            # Arrived but not found: explore within radius
-            if arrived and not found:
-                rw.step(local=True, target=(patch_to_forage['x'],patch_to_forage['y']))
-                        
-            elif finished:
+            # If patch is empty, remove it from discovered...
+            if depleted:
                 
-                if depleted or not found:
-                    robot.variables.set_attribute("depleted", "")
-                    robot.log.info(f"Resource is: depleted {depleted}/found {found}")
-                    patch_to_forage['json']['quantity'] = 0 
-                    txdata = {'function': 'verify', 'inputs': (0, 0, patch_to_forage['json'], True)}
-                    tx = Transaction(sender = me.id, receiver = 0, value = 0, data = txdata, timestamp = w3.custom_timer.time())
-                    w3.send_transaction(tx)
-
-                    robot.variables.set_attribute("foraging", "")
-                    fsm.setState(States.DROP, message = f"Collected {robot.variables.get_attribute('quantity')} {patch_to_forage['json']['quality']}", pass_along = patch_to_forage)
-
-            elif found:
+                if patch is None:
+                    # get the values from the passed along patch
+                    patch=fsm.pass_along
+                    
+                remove_patch_from_discovered(patch)
+                robot.log.info(f"Patch empty at ({patch['x']},{patch['y']});")
+                robot.variables.set_attribute("foraging", "")
+                
+                # and if the robot still has capacity, go back to explore else go drop
+                if int(robot.variables.get_attribute("quantity")) <= 0.5*cp['max_Q']:
+                    fsm.setState(States.EXPLORE, message = "Patch empty", pass_along = patch)
+                else:
+                    robot.log.info(f"Capacity low ({robot.variables.get_attribute('quantity')}); heading to DROP")
+                    fsm.setState(States.DROP, message = "Patch empty", pass_along = patch)
+            
+            # If robot reached its capacity, go drop
+            if full:
+                robot.log.info(f"Capacity reached ({robot.variables.get_attribute('quantity')}); heading to DROP")
+                robot.variables.set_attribute("foraging", "")
+                fsm.setState(States.DROP, message = f"Collected {robot.variables.get_attribute('quantity')} {patch['json'].get('quality','?')}", pass_along = patch)
+            
+            # if not depleted and not full, continue foraging
+            if not depleted and not full:
                 robot.variables.set_attribute("foraging", "True")
                 nav.avoid(move = True)
-                
-        #########################################################################################################
-        #### State::ANTENA
-        #########################################################################################################
-        
-        elif fsm.query(States.ANTENA):
-        
-            patch_to_broadcast = fsm.pass_along
-        
-            nav.sensor = 'gps'
-            distance = nav.navigate_with_obstacle_avoidance((patch_to_broadcast['json']['x'], patch_to_broadcast['json']['y']))
-        
-            if distance < 0.2*patch_to_broadcast['json']['radius']:
-                nav.avoid(move=True)
-        
-            _, patch = w3.sc.findByPos(patch_to_broadcast['json']['x'], patch_to_broadcast['json']['y'])
-        
-            if patch and patch['explorers'][0] != me.id:
-                nav.sensor = 'odometry'
-                fsm.setState(States.EVADING, message = "Another broadcasting", pass_along = patch_to_broadcast)
-        
-            elif patch and patch['status'] in ['verified', 'removed']:
-                nav.sensor = 'odometry'
-                fsm.setState(States.EVADING, message = "Finished broadcasting", pass_along = patch_to_broadcast)
-        
-        
-        #########################################################################################################
-        #### State::VERIFY
-        #########################################################################################################
-        
-        elif fsm.query(States.VERIFY):
                     
-            patch_to_verify = fsm.pass_along
-            arrived = False
-            found   = False
-            listen  = False
-        
-            # Navigate to resource
-            distance = nav.navigate_with_obstacle_avoidance((patch_to_verify['x'], patch_to_verify['y']))
-                    
-            # Sense for resources
-            patch_gs = sensing()
-        
-            if patch_gs and patch_gs['json']['x'] == patch_to_verify['json']['x'] and patch_to_verify['json']['y'] == patch_to_verify['json']['y']:
-                found = True
-        
-            # Navigate to verify
-            if distance < 0.9*patch_to_verify['json']['radius']:
-                arrived    = True   
-        
-            # Arrived but not found: explore nearby
-            if arrived and not found:
-                rw.step(local=True, target=(patch_to_verify['x'],patch_to_verify['y']))
-        
-                # # Listen for the explorer
-                # for peer in erb.peers:
-                #     if peer.id in patch_to_verify['explorers']:
-                #         explorer = peer
-                #         listen = True
-        
-                # # Can hear broadcast from explorer: navigate towards
-                # if listen:
-                #     bearing  = explorer.bearing
-                #     distance = explorer.range
-                #     target = Vector2D(distance, bearing, polar=True)
-                #     nav.navigate_with_obstacle_avoidance(target, local = True)
-        
-                # Found the patch: transact
-                if found:
-                        
-                    txdata = {'function': 'verify', 'inputs': (patch_gs['x'], patch_gs['y'], patch_gs['json'])}
-                    txs['update'] =  Transaction(sender = me.id, receiver = 0, value = 0, data = txdata, timestamp = w3.custom_timer.time())
-                    w3.send_transaction(txs['update'])
-                        
-                    robot.log.info(f"Verified {patch_to_verify['json']['quality']}")
-        
-                    fsm.setState(States.EVADING, message = "Verify success", pass_along = patch_to_verify)
-                    
-                elif fsm.elapsed > 800:
-                    txdata = {'function': 'verify', 'inputs': (0, 0, patch_to_verify['json'], True)}
-                    txs['update'] =  Transaction(sender = me.id, receiver = 0, value = 0, data = txdata, timestamp = w3.custom_timer.time())
-                    w3.send_transaction(txs['update'])
-        
-                    robot.log.info(f"Rejected {patch_to_verify['json']['quality']}")
-                    fsm.setState(States.HOMING, message = "Verify failed")
-                        
-                        
 
         #########################################################################################################
         #### State::DROP
@@ -641,26 +515,16 @@ def controlstep():
             patch_to_drop = fsm.pass_along
             
             # Navigate home
-            arrived = dropping(patch_to_drop)
+            arrived = homing(patch_to_drop)
             
             if arrived:
-            
-                # Transact to drop resource
-                if not txs['drop']:
-                    robot.log.info(f"Dropping.")
-                    txdata = {'function': 'forage', 'inputs': (patch_to_drop['x'], patch_to_drop['y'], patch_to_drop['json'])}
-                    txs['drop'] = Transaction(sender = me.id, data = txdata, timestamp = w3.custom_timer.time())
-                    w3.send_transaction(txs['drop'])
-               
-                # Transition state  
-                else:
-                     if w3.get_transaction_receipt(txs['drop'].id):
-                        robot.variables.set_attribute("dropResource", "True")
+                robot.variables.set_attribute("dropResource", "True")
             
             if not robot.variables.get_attribute("hasResource"):
-                txs['drop'] = None
-                robot.variables.set_attribute("dropResource", "")   
-                fsm.setState(States.FORAGE, message = "Dropped: %s" % patch_to_drop['json']['quality'], pass_along = patch_to_drop)    
+                robot.log.info(f"Dropped {robot.variables.get_attribute('quantity')} {patch_to_drop['json'].get('quality','?')}")
+                robot.variables.set_attribute("dropResource", "")
+                explore = None   
+                fsm.setState(States.EXPLORE, message = "Dropped: %s" % patch_to_drop['json']['quality'])    
 
 
 #########################################################################################################################

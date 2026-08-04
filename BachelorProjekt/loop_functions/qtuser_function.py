@@ -176,7 +176,7 @@ def draw_in_robot():
         # Draw resources carried by robots
         draw_resources_on_robots()
     
-        environment.qt_draw.box([3*rob_diam, 0, 0.005], [], [rob_diam, rob_diam, tx_count*0.5*rob_diam+0.0002], color_mempl)
+        #environment.qt_draw.box([3*rob_diam, 0, 0.005], [], [rob_diam, rob_diam, tx_count*0.5*rob_diam+0.0002], color_mempl)
     
         # Draw the Statesodometry position error
         odo_pos = Vector2D(parse_robot_attr("odo_position", [0, 0]))

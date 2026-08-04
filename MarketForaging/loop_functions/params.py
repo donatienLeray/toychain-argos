@@ -56,7 +56,7 @@ params['patches']['counts'] = {'red': 0, 'green': 0, 'blue': 10, 'yellow': 0}
 
 params['patches']['respawn']   = True
 params['patches']['known']     = False
-params['patches']['radius']    = 0.2
+params['patches']['radius']    = 0.05
 params['patches']['qtty_min']  = 30
 params['patches']['qtty_max']  = 30
 params['patches']['dist_min']  = 0.6 * params['generic']['arena_size']/2
