@@ -41,27 +41,26 @@ export SPEEDUNIFORM=True
 
 #export NUMROBOTS=$(echo $NUM1+$NUM2 | bc)
 export NUMROBOTS=5
-#export ARENADIM=$(echo "scale=3 ; sqrt($NUMROBOTS/$DENSITY)" | bc)
-#export ARENADIMH=$(echo "scale=3 ; $ARENADIM/2" | bc)
-# experiment 3 obstacle
-#export OBSTACLEB=$(echo "scale=3 ; $RABRANGE" | bc)
-#export ARENADIM=$(echo "scale=3 ; sqrt($NUMROBOTS/$DENSITY)+sqrt($OBSTACLEB*sqrt($NUMROBOTS/$DENSITY))" | bc)
-#export ARENADIMH=$(echo "scale=3 ; $ARENADIM/2" | bc)
-#export OBSTACLEL=$(echo "scale=3 ; (($ARENADIM*$ARENADIM)-($NUMROBOTS/$DENSITY)-($OBSTACLEB*$OBSTACLEB))/2*$OBSTACLEB" | bc)
-#export OBSTACLEOFFSET=$(echo "scale=3 ; $ARENADIMH-$OBSTACLEL/2" | bc)
-#export POINTDIM=$(echo "scale=3 ; $RABRANGE/sqrt(2)" | bc)
-#export POINTOFFSET=$(echo "scale=3 ; $ARENADIMH-$OBSTACLEL" | bc)
-#export STARTDIM=$(echo "scale=3 ; $ARENADIM/5" | bc)
 
+# obstacle dimensions
 export SCALINGF=$(echo "scale=3 ; sqrt($NUMROBOTS/5)" | bc)
 export OBSTACLEB=$(echo "scale=3 ; 0.5*$SCALINGF" | bc)
-export ARENADIM=$(echo "scale=3 ; 2.469*$SCALINGF" | bc)
+
+# Arena dimension (obstacle arna needs to factor out the obstacle size, forage )
+case "$ARGOSNAME" in
+	"obstacle") export ARENADIM=$(echo "scale=3 ; 2.469*$SCALINGF" | bc) ;;
+	*)          export ARENADIM=$(echo "scale=3 ; sqrt($NUMROBOTS/$DENSITY)" | bc) ;;
+esac
+
 export ARENADIMH=$(echo "scale=3 ; $ARENADIM/2" | bc)
+export STARTDIM=$(echo "scale=3 ; $ARENADIM/5" | bc)
+
+# obstacle dimensions
+
 export OBSTACLEL=$(echo "scale=3 ; 0.836*$SCALINGF" | bc)
 export OBSTACLEOFFSET=$(echo "scale=3 ; $ARENADIMH-$OBSTACLEL/2" | bc)
 export POINTDIM=$(echo "scale=3 ; $OBSTACLEB/sqrt(2)" | bc)
 export POINTOFFSET=$(echo "scale=3 ; $ARENADIMH-$OBSTACLEL+$OBSTACLEB/2" | bc)
-export STARTDIM=$(echo "scale=3 ; $ARENADIM/5" | bc)
 export POINTH=$(echo "scale=3 ; $OBSTACLEB/2" | bc)
 
 # Top-right square side length in meters for entry/exit logging.
@@ -72,6 +71,10 @@ export TRIANGLE_ROBOTS=$(echo "scale=0 ; $NUMROBOTS/5" | bc)
 export OUTSIDE_TRIANGLE_ROBOTS=$(echo "$NUMROBOTS-$TRIANGLE_ROBOTS" | bc)
 export TRIANGLE_START_SIZE=$(echo "scale=3 ; $ZONE_SIZE/2" | bc)
 export TRIANGLE_START_MIN=$(echo "scale=3 ; $ARENADIMH-$TRIANGLE_START_SIZE" | bc)
+
+# Foraging specific parameters
+export PATCHES_COUNT=$(echo "scale=0 ; $ARENADIM*15" | bc)
+# export PATCHES_COUNT_B=$(echo "scale=0 ; $ARENADIM*25" | bc)
 
 
 # [TOYCHAIN]
@@ -88,7 +91,7 @@ export REP_SEED=True
 export TIMELIMIT=100
 export LENGTH=400
 export SLEEPTIME=5
-export REPS=20
+export REPS=7
 export NOTES="just a test"
 
 

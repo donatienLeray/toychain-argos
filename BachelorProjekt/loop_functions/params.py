@@ -116,7 +116,7 @@ params['debug']['sc'] = False
 params['market'] = dict()
 params['market']['x'] = 0
 params['market']['y'] = 0
-params['market']['r'] = 3.5 * 0.073/2 * math.sqrt(params['generic']['num_robots'])
+params['market']['r'] = 3.5 * 0.073/2 * (params['generic']['arena_size'])
 
 # Parameters for cache
 params['cache'] = dict()
@@ -125,7 +125,7 @@ params['cache']['y'] = params['market']['y']
 params['cache']['r'] = 0.09 + params['market']['r']
 
 params['patches'] = dict()
-params['patches']['qualities'] = {'red', 'green' , 'blue', 'yellow'}
+params['patches']['qualities'] = {'blue'}
 
 params['patches']['distribution'] = 'uniform' 
 # params['patches']['distribution'] = 'patchy'
@@ -135,7 +135,7 @@ params['patches']['distribution'] = 'uniform'
 # 									     'y_sg': 0.15 * params['generic']['arena_size']}]
 # params['patches']['distribution'] = 'fixed' 
 
-params['patches']['counts'] = {'red': 0, 'green': 0, 'blue': 25, 'yellow': 0}
+params['patches']['counts'] = {'blue': int(round(float(os.environ["PATCHES_COUNT"])))}
 # params['patches']['x'] = [ 0.25]
 # params['patches']['y'] = [ 0.25]
 
@@ -148,19 +148,19 @@ params['patches']['known']     = False
 params['patches']['radius']    = 0.08
 params['patches']['qtty_min']  = 10
 params['patches']['qtty_max']  = 35
-params['patches']['dist_min']  = 0.6 * params['generic']['arena_size']/2
-params['patches']['dist_max']  = 0.9 * params['generic']['arena_size']/2
+params['patches']['dist_min']  = 0.2* params['generic']['arena_size']/2
+params['patches']['dist_max']  = 1.5 * params['generic']['arena_size']/2
 
-params['patches']['qtty_min']  = {'red': 10, 'green': 30, 'blue': 10, 'yellow': 10}
-params['patches']['qtty_max']  = {'red': 10, 'green': 30, 'blue': 35, 'yellow': 30}
+params['patches']['qtty_min']  = {'blue': 10}
+params['patches']['qtty_max']  = {'blue': 35}
 
 params['patches']['radii']  = {k: params['patches']['radius'] for k in params['patches']['qualities']}
 # params['patches']['radii']  = {k: round(math.sqrt(params['patches']['qtty_min'][k])/20,2) for k in params['patches']['qualities']}
 
 # Parameters for resource economy
-params['patches']['utility']     = {'red': 1, 'green':  1, 'blue': 1, 'yellow': 1}
-params['patches']['forage_rate'] = {'red': 1, 'green':  1, 'blue': 1, 'yellow': 1}
-params['patches']['regen_rate']  = {'red': 500, 'green': 0, 'blue': 5000, 'yellow': 0}
+params['patches']['utility']     = {'blue': 1}
+params['patches']['forage_rate'] = {'blue': 1}
+params['patches']['regen_rate']  = {'blue': 5000}
 
 params['patches']['dec_returns'] = dict()
 params['patches']['dec_returns']['func']   = 'linear'                       # constant, linear or logarithmic decreasing returns
@@ -183,7 +183,7 @@ params['patches']['forage_together'] = False
 
 # Parameters for the economy
 params['economy'] = dict()
-params['economy']['consum_rate'] = {'red': 1, 'green':  1, 'blue': 1, 'yellow': 1}  # number of resources consumed at the market per block
+params['economy']['consum_rate'] = {'blue': 1}  # number of resources consumed at the market per block
 params['economy']['DEMAND_A'] = 1
 params['economy']['DEMAND_B'] = 1
 params['economy']['efficiency_distribution'] = 'linear' 

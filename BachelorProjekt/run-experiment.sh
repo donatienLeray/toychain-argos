@@ -133,7 +133,10 @@ run() {
 	fi
 }
 
-#####################################################################
+####################################################################
+########################## TESTS ###################################
+####################################################################
+
 ## run experiment with different consensus mechanisms
 #EXP=test
 #CFG=test
@@ -168,26 +171,197 @@ run() {
 #wait
 #run "${EXP}/${CFG}" $@
 
-
 ####################################################################
-# run experiment with different consensus mechanisms
-#EXP=1_random_walk
-#EXP=2_random_walk_different_speed
-#EXP=3_random_walk_obstacle_trap
-EXP=4_foraging	
+################### ALL EXPERIMENTS  ###############################
+####################################################################
 
-# Explorer
-config "EXPLORER" "False"
+# For alll experiments
 
-# standard values
+# Meta parameters
 config "TPS" 10
-config "REPS" 20
+config "REPS" 7
 config "LENGTH" 400
 config "REP_SEED" "True"
+
+# Debugging
+config "EXPLORER" "False" #to see life blockchain explorer.
 loopconfig "debug" "main" "False"
 loopconfig "debug" "loop" "True"
 loopconfig "debug" "scs" "True"
+# agent configuration
 config "AGENTSPEED" 18
+
+
+#####################################################################
+#EXP=1_random_walk
+#####################################################################
+#
+## set to to false for experiment 2_random_walk_different_speed
+#config "SPEEDUNIFORM" "True"
+## set to obstacle for experiment 3_random_walk_obstacle_trap else set to greeter
+#config ARGOSNAME "greeter" #greeter|obstacle|foraging
+## set the cotroller to main_foraging.py for experiment 4_foragingelse set to main
+#config "CTRL" "main.py" #main|main_foraging.py
+#
+##########
+## R-POA #
+##########
+#config "CONSENSUS" "ProofOfConnection"
+#loopconfig "scs" "update" "\"no_update\""
+#loopconfig "scs" "decay" 50
+#
+## run experiment with increasing range of robots
+#for UTIL in $(seq 5 5 25); do 
+#	#name of the configuration
+#	CFG="R-PoA_${UTIL}"
+#	# set number of robots
+#	config "NUMROBOTS" "${UTIL}"
+#	# run experiment
+#	wait
+#	run "${EXP}/${CFG}" $@
+#done
+#
+###################
+### POA,PoW & PoC #
+###################
+#loopconfig "scs" "update" "\"peer_index\""
+#for consensus in "ProofOfAuthority" "ProofOfWork" "ProofOfConnection"; do
+#  	config "CONSENSUS" "$consensus"
+#
+#	# run experiment with increasing range of robots
+#	for UTIL in $(seq 5 5 25); do 
+#		#name of the configuration using switch case for consensus name
+#		case "$consensus" in
+#			"ProofOfAuthority") CFG="PoA_${UTIL}" ;;
+#			"ProofOfWork") CFG="PoW_${UTIL}" ;;
+#			"ProofOfConnection") CFG="C-PoA_${UTIL}" ;;
+#			*) CFG="${consensus}_${UTIL}" ;;
+#		esac
+#		# set number of robots
+#		config "NUMROBOTS" "${UTIL}"
+#		# run experiment
+#		wait
+#		run "${EXP}/${CFG}" $@
+#	done
+#
+#done
+
+#####################################################################
+#EXP=2_random_walk_different_speed
+#####################################################################
+#
+## Explorer
+#config "EXPLORER" "False"
+#
+## set to to false for experiment 2_random_walk_different_speed
+#config "SPEEDUNIFORM" "False"
+## set to obstacle for experiment 3_random_walk_obstacle_trap else set to greeter
+#config ARGOSNAME "greeter" #greeter|obstacle|foraging
+## set the cotroller to main_foraging.py for experiment 4_foragingelse set to main
+#config "CTRL" "main.py" #main|main_foraging.py
+#
+##########
+## R-POA #
+##########
+#config "CONSENSUS" "ProofOfConnection"
+#loopconfig "scs" "update" "\"no_update\""
+#loopconfig "scs" "decay" 50
+#
+## run experiment with increasing range of robots
+#for UTIL in $(seq 5 5 25); do 
+#	#name of the configuration
+#	CFG="R-PoA_${UTIL}"
+#	# set number of robots
+#	config "NUMROBOTS" "${UTIL}"
+#	# run experiment
+#	wait
+#	run "${EXP}/${CFG}" $@
+#done
+#
+###################
+### POA,PoW & PoC #
+###################
+#loopconfig "scs" "update" "\"peer_index\""
+#for consensus in "ProofOfAuthority" "ProofOfWork" "ProofOfConnection"; do
+#  	config "CONSENSUS" "$consensus"
+#
+#	# run experiment with increasing range of robots
+#	for UTIL in $(seq 5 5 25); do 
+#		#name of the configuration using switch case for consensus name
+#		case "$consensus" in
+#			"ProofOfAuthority") CFG="PoA_${UTIL}" ;;
+#			"ProofOfWork") CFG="PoW_${UTIL}" ;;
+#			"ProofOfConnection") CFG="C-PoA_${UTIL}" ;;
+#			*) CFG="${consensus}_${UTIL}" ;;
+#		esac
+#		# set number of robots
+#		config "NUMROBOTS" "${UTIL}"
+#		# run experiment
+#		wait
+#		run "${EXP}/${CFG}" $@
+#	done
+#
+#done
+
+#####################################################################
+#EXP=3_random_walk_obstacle_trap
+#####################################################################
+#
+## set to to false for experiment 2_random_walk_different_speed
+#config "SPEEDUNIFORM" "True"
+## set to obstacle for experiment 3_random_walk_obstacle_trap else set to greeter
+#config ARGOSNAME "obstacle" #greeter|obstacle|foraging
+## set the cotroller to main_foraging.py for experiment 4_foragingelse set to main
+#config "CTRL" "main.py" #main|main_foraging.py
+#
+##########
+## R-POA #
+##########
+#config "CONSENSUS" "ProofOfConnection"
+#loopconfig "scs" "update" "\"no_update\""
+#loopconfig "scs" "decay" 50
+#
+## run experiment with increasing range of robots
+#for UTIL in $(seq 5 5 25); do 
+#	#name of the configuration
+#	CFG="R-PoA_${UTIL}"
+#	# set number of robots
+#	config "NUMROBOTS" "${UTIL}"
+#	# run experiment
+#	wait
+#	run "${EXP}/${CFG}" $@
+#done
+#
+###################
+### POA,PoW & PoC #
+###################
+#loopconfig "scs" "update" "\"peer_index\""
+#for consensus in "ProofOfAuthority" "ProofOfWork" "ProofOfConnection"; do
+#  	config "CONSENSUS" "$consensus"
+#
+#	# run experiment with increasing range of robots
+#	for UTIL in $(seq 5 5 25); do 
+#		#name of the configuration using switch case for consensus name
+#		case "$consensus" in
+#			"ProofOfAuthority") CFG="PoA_${UTIL}" ;;
+#			"ProofOfWork") CFG="PoW_${UTIL}" ;;
+#			"ProofOfConnection") CFG="C-PoA_${UTIL}" ;;
+#			*) CFG="${consensus}_${UTIL}" ;;
+#		esac
+#		# set number of robots
+#		config "NUMROBOTS" "${UTIL}"
+#		# run experiment
+#		wait
+#		run "${EXP}/${CFG}" $@
+#	done
+#
+#done
+
+
+####################################################################
+EXP=4_foraging	
+####################################################################
+
 # set to to false for experiment 2_random_walk_different_speed
 config "SPEEDUNIFORM" "True"
 # set to obstacle for experiment 3_random_walk_obstacle_trap else set to greeter
@@ -195,9 +369,9 @@ config ARGOSNAME "foraging" #greeter|obstacle|foraging
 # set the cotroller to main_foraging.py for experiment 4_foragingelse set to main
 config "CTRL" "main_foraging.py" #main|main_foraging.py
 
-##########
-# RANDOM #
-##########
+#########
+# R-POA #
+#########
 config "CONSENSUS" "ProofOfConnection"
 loopconfig "scs" "update" "\"no_update\""
 loopconfig "scs" "decay" 50
@@ -208,18 +382,14 @@ for UTIL in $(seq 5 5 25); do
 	CFG="R-PoA_${UTIL}"
 	# set number of robots
 	config "NUMROBOTS" "${UTIL}"
-	# foraging sepcific parameters Util/5
-	# multiplicator for paches= Numrobot/5
-	patches_m=$(( UTIL * 5 ))
-	loopconfig "patches" "counts" "{'red': 0, 'green': 0, 'blue': ${patches_m}, 'yellow': 0}"
 	# run experiment
 	wait
 	run "${EXP}/${CFG}" $@
 done
 
-####################
-## POA,PoW and PoC #
-####################
+##################
+## POA,PoW & PoC #
+##################
 loopconfig "scs" "update" "\"peer_index\""
 for consensus in "ProofOfAuthority" "ProofOfWork" "ProofOfConnection"; do
   	config "CONSENSUS" "$consensus"
@@ -235,8 +405,6 @@ for consensus in "ProofOfAuthority" "ProofOfWork" "ProofOfConnection"; do
 		esac
 		# set number of robots
 		config "NUMROBOTS" "${UTIL}"
-		patches_m=$(( UTIL * 5 ))
-		loopconfig "patches" "counts" "{'red': 0, 'green': 0, 'blue': ${patches_m}, 'yellow': 0}"
 		# run experiment
 		wait
 		run "${EXP}/${CFG}" $@
@@ -245,137 +413,5 @@ for consensus in "ProofOfAuthority" "ProofOfWork" "ProofOfConnection"; do
 done
 
 
-
-
-##
-## DEFINE EXPERIMENT
-#EXP=test_logging
-#
-## standard values
-#config "TPS" 10
-#config "REPS" 10
-#config "LENGTH" 400
-#config "REP_SEED" "True"
-#config "CONSENSUS" "ProofOfConnection"
-#loopconfig "debug" "main" "False"
-#loopconfig "debug" "loop" "True"
-#loopconfig "scs" "update" "\"peer_index\""
-#loopconfig "scs" "decay" 200
-## Explorer
-#config "EXPLORER" "False"
-#
-## run experiment with increasing range of robots
-#for AGT in $(seq 5 5 25); do 
-#	# set number of robots
-#	config "NUMROBOTS" "${AGT}"	
-#	#name of the configuration
-#	CFG="ProofOfConnection2_${AGT}"
-#	# run experiment
-#	wait
-#	run "${EXP}/${CFG}" $@
-#
-#done
-
-
-## DEFINE EXPERIMENT
-#EXP=POC_vary_decay
-#
-## standard values
-#config "TPS" 10
-#config "REPS" 10
-#config "LENGTH" 400
-#config "REP_SEED" "True"
-#config "CONSENSUS" "ProofOfConnection"
-#loopconfig "debug" "main" "False"
-#loopconfig "debug" "loop" "True"
-#
-#for AGT in $(seq 5 5 25); do 
-#	# set number of robots
-#	config "NUMROBOTS" "${AGT}"
-#
-#	# run experiment with increasing range of robots
-#	for DEC in $(seq 50 50 250); do
-#		# set update function
-#		loopconfig "scs" "decay" "${DEC}"
-#
-#		#name of the configuration
-#		CFG="${DEC}_${AGT}"
-#		# run experiment
-#		wait
-#		run "${EXP}/${CFG}" $@
-#
-#	done
-#done
-
-
-
-
-# # DEFINE CONFIGURATION 1
-# CFG=linear_20
-# 
-
-# wait
-# run    "${EXP}/${CFG}"
-
-
-# DEFINE CONFIGURATION 1
-# CFG=linear_20_limassign_0_regen_10
-# config "LIMITASSIGN" 0
-# config "NOTES" "\"Testing maxload 12 and new resource regen/forage; limassign 50 vs limassign 0; regen 5 vs regen 10\""
-
-# wait
-# run    "${EXP}/${CFG}"
-
-
-
-
-
-# EXP=115_patch_size
-
-# config "REPS" 3
-# config "NUM1" 10
-
-# #-----------------------
-# config "SCNAME" "resource_market_limit" 
-# config "MAXWORKERS" 2
-
-# declare -a arr=(0.20 0.16 0.12 0.08 0.04)
-# for patch_radius in "${arr[@]}"; do 
-# 	loopconfig "patches" "radius" patch_radius	
-# 	wait
-# 	run    "${EXP}/limit_2" $1
-# done	
-
-# #-----------------------
-# config "SCNAME" "resource_market_egreedy" 
-# config "EPSILON" 50
-
-# declare -a arr=(0.20 0.16 0.12 0.08 0.04)
-# for patch_radius in "${arr[@]}"; do 
-# 	loopconfig "patches" "radius" patch_radius	
-# 	wait
-# 	run    "${EXP}/egreedy_50" $1
-# done
-
-# #-----------------------
-# config "SCNAME" "resource_market_egreedy"
-
-# CFG=limit_3
-# config "EPSILON" 50
-# wait
-# run    "${EXP}/${CFG}" $1
-
-# CFG=egreedy_20
-# config "EPSILON" 20
-# wait
-# run    "${EXP}/${CFG}"
-
-
-# for EPSILON in $(seq 0 10 100); do 
-# 	CFG=egreedy_${EPSILON}
-# 	config "EPSILON" ${EPSILON}
-# 	wait
-# 	run    "${EXP}/${CFG}"
-# done
-
+#####################################################################
 exit 0

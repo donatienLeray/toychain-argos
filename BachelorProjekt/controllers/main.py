@@ -309,10 +309,6 @@ def controlstep():
 
         for clock in clocks.values():
             clock.reset()
-            
-        # Register to Smart Contract transaction
-        tx = Transaction(sender = me.id, data = {'function': 'register', 'inputs': []})
-        w3.send_transaction(tx)
 
     else:
 

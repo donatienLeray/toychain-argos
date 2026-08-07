@@ -150,10 +150,6 @@ def draw_in_world():
         draw_patches()
 	
 def draw_in_robot():
-    # Draw rays to w3 peers
-    w3_peers = parse_robot_attr("w3_peers", [])
-    for peer_rb in w3_peers:
-        environment.qt_draw.ray([0, 0 , 0.01],[peer_rb[0]*math.cos(peer_rb[1]), peer_rb[0]*math.sin(peer_rb[1]) , 0.01], 'red', 0.15)
         
     # Draw block hash and state hash with circles
     color_state = hash_to_rgb(robot.variables.get_attribute("state_hash"))
@@ -168,11 +164,16 @@ def draw_in_robot():
     environment.qt_draw.circle([0,0,0.011], [], 0.075, color_block, True) #middle circle
     environment.qt_draw.circle([0,0,0.012], [], 0.050, color_mempl, True) #inner circle 
     
-    # Draw ERB range
-    erb_range  = robot.variables.get_attribute("erb_range") if robot.variables.get_attribute("erb_range") else 0
-    environment.qt_draw.circle([0, 0, 0.00005],[], float(erb_range), 'gray90', False)
+    
     
     if argos_name == "foraging":
+        # Draw rays to w3 peers
+        w3_peers = parse_robot_attr("w3_peers", [])
+        for peer_rb in w3_peers:
+            environment.qt_draw.ray([0, 0 , 0.01],[peer_rb[0]*math.cos(peer_rb[1]), peer_rb[0]*math.sin(peer_rb[1]) , 0.01], 'red', 0.15)
+        # Draw ERB range
+        erb_range  = robot.variables.get_attribute("erb_range") if robot.variables.get_attribute("erb_range") else 0
+        environment.qt_draw.circle([0, 0, 0.00005],[], float(erb_range), 'gray90', False)
         # Draw resources carried by robots
         draw_resources_on_robots()
     
